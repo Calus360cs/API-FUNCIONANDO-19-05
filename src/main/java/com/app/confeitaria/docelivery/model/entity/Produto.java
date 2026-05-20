@@ -1,7 +1,11 @@
 package com.app.confeitaria.docelivery.model.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "produto")
@@ -17,18 +21,54 @@ public class Produto {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @EqualsAndHashCode.Include
     private Long id;
+
     @Column(nullable = false, length = 100)
     private String nome;
-    @Column(nullable = false, length = 10)
-    private double preco;
-    @Column(nullable = false, length = 20)
-    private int estoque;
-    @Column(nullable = false, length = 100)
-    private String descricao;
-    private boolean codStatus;
 
-    @ManyToOne(cascade = CascadeType.MERGE, fetch = FetchType.EAGER)
-    @JoinColumn(name = "categoria_id", referencedColumnName = "id", nullable = false)
+    @Column(nullable = false)
+    private Double preco;
+
+    @Column(nullable = false)
+    private Integer estoque;
+
+    @Column(nullable = false, length = 255)
+    private String descricao;
+
+    @Column(name = "imagem_url")
+    private String imagemUrl;
+
+    @Column(name = "cod_status")
+    @JsonProperty("disponivel")
+    private Boolean codStatus = true;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "categoria_id")
     private Categoria categoria;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "confeiteiro_id", nullable = false)
+    @JsonIgnore // Evita loops e dados desnecessários na listagem
+    private Usuario confeiteiro;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "loja_id")
+    @JsonIgnore
+    private Loja loja;
+
+    // 🟢 CORREÇÃO: Mantido apenas a relação via KitItem (com controle de quantidade)
+    // 🟢 ADICIONADO: @JsonIgnore aqui para sumir de VEZ com o erro 'Cannot lazily initialize collection'
+    @JsonIgnore
+    @OneToMany(mappedBy = "kit", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default // Garante que o Builder do Lombok não deixe essa lista nula
+    private List<KitItem> itens = new ArrayList<>();
+
+    // 🔴 REMOVIDO: O bloco @ManyToMany antigo (itensDoKit) foi removido
+    // para não inflar o banco com tabelas duplicadas desnecessárias.
+
+    public void setCategoriaId(Long id) {
+        if (id != null) {
+            this.categoria = new Categoria();
+            this.categoria.setId(id);
+        }
+    }
 }

@@ -1,4 +1,10 @@
 package com.app.confeitaria.docelivery.dto;
 
-public class ItemPedidoDTO {
-}
+import java.math.BigDecimal;
+
+public record ItemPedidoDTO(
+        Long produtoId,
+        String nomeProduto,
+        Integer quantidade,
+        BigDecimal precoUnitario
+) {}

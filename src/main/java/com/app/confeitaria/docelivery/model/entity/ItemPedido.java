@@ -11,21 +11,31 @@ import lombok.*;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-
 public class ItemPedido {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @EqualsAndHashCode.Include
     private Long id;
-    @Column(nullable = false, length = 20)
+
+    @Column(nullable = false)
     private int quantidade;
 
-    @ManyToOne(cascade = CascadeType.MERGE, fetch = FetchType.EAGER)
-    @JoinColumn(name = "produto_id", referencedColumnName = "id", nullable = false)
-    private Produto produto;
+    @Column(nullable = false)
+    private double precoUnitario; // Preço do doce no dia da compra
 
-    @ManyToOne(cascade = CascadeType.MERGE, fetch = FetchType.EAGER)
-    @JoinColumn(name = "cliente_id", referencedColumnName = "id", nullable = false)
-    private Cliente cliente;
+    @Column(nullable = false)
+    private double precoTotal;    // Calculado: quantidade * precoUnitario
+
+    // RELACIONAMENTOS
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "pedido_id", nullable = false)
+    private Pedido pedido; // O item precisa saber a qual pedido pertence
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "produto_id", nullable = false)
+    private Produto produto; // O item precisa saber qual doce foi vendido
+
+
 }
