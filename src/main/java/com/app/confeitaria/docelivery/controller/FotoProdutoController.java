@@ -1,4 +1,4 @@
 package com.app.confeitaria.docelivery.controller;
 
-public class ProdutoController {
+public class FotoProdutoController {
 }
