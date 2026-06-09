@@ -22,12 +22,16 @@ public class Pedido {
     @Column(nullable = false, length = 10, unique = true)
     private String numeroPedido;
 
-    private double valorPedido;
+    // 🟢 CORRIGIDO: Mudou de 'double' para 'Double' (Aceita null e evita erro 500)
+    private Double valorPedido;
+
     private LocalDateTime dataHoraPedido;
-    /**private String status;**/
-    private boolean codStatus;
-    private boolean agendado; // O Lombok criará o método isAgendado()
-    private LocalDateTime dataEntregaAgendada; // O Lombok criará o método getDataEntregaAgendada()
+
+    // 🟢 CORRIGIDO: Mudou de 'boolean' para 'Boolean' (Mais seguro para desserialização de JSON)
+    private Boolean codStatus;
+    private Boolean agendado;
+
+    private LocalDateTime dataEntregaAgendada;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status")

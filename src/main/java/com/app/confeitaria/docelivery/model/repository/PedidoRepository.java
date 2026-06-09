@@ -4,6 +4,8 @@ import com.app.confeitaria.docelivery.model.entity.Pedido;
 import com.app.confeitaria.docelivery.model.enums.StatusPedido;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
@@ -23,4 +25,13 @@ public interface PedidoRepository extends JpaRepository<Pedido, Long> {
 
     // Busca por número do pedido (Caso precise de uma busca rápida no topo do site)
     Pedido findByNumeroPedido(String numeroPedido);
+
+    // =========================================================================
+    // PASSO 2 - ADICIONE ESTE MÉTODO ABAIXO:
+    // =========================================================================
+    // Ele busca TODOS os pedidos globais que são do tipo AGENDADO e que a data limite já chegou
+    List<Pedido> findByStatusAndDataEntregaAgendadaBefore(StatusPedido status, LocalDateTime dataLimite);
+
+    // Essa linha precisa estar aqui para o Service funcionar!
+    List<Pedido> findByClienteId(Long clienteId);
 }

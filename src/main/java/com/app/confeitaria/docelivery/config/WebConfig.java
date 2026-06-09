@@ -16,7 +16,13 @@ public class WebConfig implements WebMvcConfigurer {
         // Converte para o formato que o Spring entende (file:///C:/...)
         String absolutePath = Paths.get(uploadDir).toUri().toString();
 
+        // 1. Mantém o mapeamento existente de uploads
         registry.addResourceHandler("/uploads/**")
+                .addResourceLocations(absolutePath)
+                .setCachePeriod(0);
+
+        // 🟢 CORREÇÃO ADICIONADA: Mapeia também as requisições de /imagens/** para a mesma pasta física
+        registry.addResourceHandler("/imagens/**")
                 .addResourceLocations(absolutePath)
                 .setCachePeriod(0);
 

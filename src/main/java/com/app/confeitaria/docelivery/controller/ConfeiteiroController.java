@@ -1,20 +1,19 @@
 package com.app.confeitaria.docelivery.controller;
 
+import com.app.confeitaria.docelivery.dto.ConfeiteiroDTO; // Import do seu novo ConfeiteiroDTO
+import com.app.confeitaria.docelivery.dto.LojaDTO; // Import do seu novo DTO
 import com.app.confeitaria.docelivery.model.entity.Confeiteiro;
-import com.app.confeitaria.docelivery.model.entity.Loja;
-import com.app.confeitaria.docelivery.model.entity.Usuario; // CORREÇÃO: Import da entidade Usuario adicionado
 import com.app.confeitaria.docelivery.model.repository.ConfeiteiroRepository;
 import com.app.confeitaria.docelivery.model.repository.UsuarioRepository;
+import com.app.confeitaria.docelivery.service.ConfeiteiroService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-// CORREÇÃO: Removido o @Lombok inexistente que quebrava a compilação
 @RestController
 @RequestMapping("/api/confeiteiro")
 @CrossOrigin("*")
@@ -24,123 +23,75 @@ public class ConfeiteiroController {
     private ConfeiteiroRepository repository;
 
     @Autowired
-    private UsuarioRepository usuarioRepository; // CORREÇÃO: Injetado o repositório que faltava para o método /profile
+    private UsuarioRepository usuarioRepository;
+
+    @Autowired
+    private ConfeiteiroService service;
+
+    @Autowired
+    private ConfeiteiroService confeiteiroService; // Injete o service caso ainda não esteja injetado
 
     @GetMapping("/{id}")
     public ResponseEntity<?> buscar(@PathVariable Long id) {
-        return repository.findById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        try {
+            // AJUSTADO: Agora chama o método do Service que retorna o DTO estruturado com a Loja interna
+            ConfeiteiroDTO confeiteiroDTO = confeiteiroService.buscarConfeiteiroPorId(id);
+            return ResponseEntity.ok(confeiteiroDTO);
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
+
     @PutMapping(value = "/atualizar/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Transactional
     public ResponseEntity<?> atualizarConfeiteiro(@PathVariable Long id, @ModelAttribute Confeiteiro dadosAtualizados) {
         try {
-            Confeiteiro confeiteiro = repository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Confeiteiro não encontrado com o ID: " + id));
-
-            if (dadosAtualizados.getNome() != null) {
-                confeiteiro.setNome(dadosAtualizados.getNome());
-            }
-            if (dadosAtualizados.getTelefone() != null) {
-                confeiteiro.setTelefone(dadosAtualizados.getTelefone());
-            }
-
-            if (dadosAtualizados.getLoja() != null && confeiteiro.getLoja() != null) {
-                confeiteiro.getLoja().setNomeFantasia(dadosAtualizados.getLoja().getNomeFantasia());
-            }
-
-            Confeiteiro salvo = repository.save(confeiteiro);
+            Confeiteiro salvo = service.atualizarConfeiteiro(id, dadosAtualizados);
             return ResponseEntity.ok(salvo);
-
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(500).body("Erro ao atualizar perfil: " + e.getMessage());
         }
     }
 
-    @PutMapping("/perfil/loja")
-    @org.springframework.transaction.annotation.Transactional // 🟢 CRÍTICO: Abre a transação para o Hibernate rastrear e salvar as alterações nas tabelas relacionadas
-    public ResponseEntity<?> atualizarPerfilLoja(@RequestBody Confeiteiro dadosAtualizados) {
+    /**
+     * NOVO ENDPOINT ATUALIZADO (PASSO 2)
+     * Mapeia exatamente a URL: http://localhost:8080/api/confeiteiro/loja/atualizar/{id}
+     * que o seu front-end do React está chamando.
+     */
+    @PutMapping("/loja/atualizar/{id}")
+    public ResponseEntity<?> atualizarPerfilLoja(@PathVariable Long id, @RequestBody LojaDTO lojaDTO) {
         try {
-            return repository.findById(dadosAtualizados.getId())
-                    .map(confeiteiroBanco -> {
+            System.out.println("Recebendo requisição PUT em /loja/atualizar/" + id);
+            System.out.println("Payload recebido: Nome Fantasia -> " + lojaDTO.getNomeFantasia());
 
-                        // 1. Atualiza os dados básicos do Confeiteiro/Usuário
-                        confeiteiroBanco.setNome(dadosAtualizados.getNome());
-                        confeiteiroBanco.setEmail(dadosAtualizados.getEmail());
+            // Processa a regra no service (usando aquela versão corrigida que evita o INSERT duplicado)
+            com.app.confeitaria.docelivery.model.entity.Confeiteiro confeiteiroAtualizado = service.atualizarPerfilLoja(id, lojaDTO);
 
-                        // 2. Se o formulário trouxe dados de loja e ela já existe no banco
-                        if (dadosAtualizados.getLoja() != null && confeiteiroBanco.getLoja() != null) {
-                            Loja lojaBanco = confeiteiroBanco.getLoja();
-                            Loja lojaForm = dadosAtualizados.getLoja();
+            // CORREÇÃO DE RESPOSTA: Retorna o objeto atualizado completo para o React atualizar o Contexto na hora
+            return ResponseEntity.ok(confeiteiroAtualizado);
 
-                            // Atualiza os campos da loja existente
-                            lojaBanco.setNomeFantasia(lojaForm.getNomeFantasia());
-                            lojaBanco.setDescricao(lojaForm.getDescricao());
-
-                            // Se o formulário também trouxer esses campos, atualize-os para não perder dados:
-                            if (lojaForm.getCnpj() != null) lojaBanco.setCnpj(lojaForm.getCnpj());
-                            if (lojaForm.getTelefone() != null) lojaBanco.setTelefone(lojaForm.getTelefone());
-                            if (lojaForm.getEndereco() != null) lojaBanco.setEndereco(lojaForm.getEndereco());
-
-                            // 🟢 Sincroniza os dois lados em memória antes de salvar
-                            lojaBanco.setConfeiteiro(confeiteiroBanco);
-                            confeiteiroBanco.setLoja(lojaBanco);
-                        }
-
-                        // 3. Salva o Confeiteiro (o CascadeType.ALL na entidade Usuario vai empurrar as alterações para a tabela Loja)
-                        Confeiteiro confeiteiroSalvo = repository.save(confeiteiroBanco);
-
-                        return ResponseEntity.ok((Object) confeiteiroSalvo);
-                    })
-                    .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).build());
-
+        } catch (RuntimeException e) {
+            // Se o erro for de negócio (Confeiteiro não encontrado, etc), avisa com Bad Request em vez de confundir com rota 404
+            System.err.println("Erro de regra de negócio: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("{\"error\": \"" + e.getMessage() + "\"}");
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.status(500).body("Erro ao atualizar no banco: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("{\"error\": \"Erro interno no servidor ao salvar no banco: " + e.getMessage() + "\"}");
         }
     }
 
+
     @GetMapping("/profile")
-    @org.springframework.transaction.annotation.Transactional // 🟢 Garante que a sessão do banco continue aberta para carregar a loja
     public ResponseEntity<?> obterPerfilPorEmail(@RequestParam String email) {
-        return usuarioRepository.findByEmail(email)
-                .map(usuario -> {
-                    // Verifica se o usuário de fato é um Confeiteiro
-                    if (usuario instanceof Confeiteiro) {
-                        Confeiteiro confeiteiro = (Confeiteiro) usuario;
-
-                        if (confeiteiro.getLoja() == null) {
-                            Loja novaLoja = new Loja();
-                            novaLoja.setNomeFantasia("Minha Nova Confeitaria");
-                            novaLoja.setDescricao("Adicione uma descrição para a sua loja.");
-
-                            // Vincula a Loja ao Confeiteiro (Lado inverso da relação)
-                            novaLoja.setConfeiteiro(confeiteiro);
-
-                            // Dados obrigatórios (nullable = false) para evitar erro de constraint no banco
-                            novaLoja.setCnpj("00.000.000/0001-00");
-                            novaLoja.setTelefone(confeiteiro.getTelefone() != null ? confeiteiro.getTelefone() : "000000000");
-                            novaLoja.setEndereco("Endereço não informado");
-
-                            // 🟢 O SEGREDO DO JPA AQUI:
-                            // Vincula o Confeiteiro à Loja (Lado dono da relação que tem a FK no banco)
-                            confeiteiro.setLoja(novaLoja);
-
-                            // 🟢 GARANTA O SALVAMENTO COMPLETO:
-                            // Salvando o confeiteiro, o JPA identifica a 'novaLoja' e faz o cascateamento no banco.
-                            confeiteiro = repository.save(confeiteiro);
-                        }
-
-                        return ResponseEntity.ok((Object) confeiteiro);
-                    }
-
-                    // Se for um cliente comum, apenas retorna o usuário
-                    return ResponseEntity.ok(usuario);
-                })
-                .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+        try {
+            Object perfil = service.obterPerfilPorEmail(email);
+            return ResponseEntity.ok(perfil);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
     }
 
     @GetMapping("/public/lojas")

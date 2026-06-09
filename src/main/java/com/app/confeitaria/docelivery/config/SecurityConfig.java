@@ -1,13 +1,15 @@
 package com.app.confeitaria.docelivery.config;
 
+import org.springframework.web.filter.CorsFilter;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,18 +24,26 @@ public class SecurityConfig {
     private final SecurityFilter securityFilter;
     private final CorsConfigurationSource corsConfigurationSource;
 
+    // 🟢 Voltamos a injetar o CORS que vem da sua classe CorsConfig antiga
     public SecurityConfig(SecurityFilter securityFilter, CorsConfigurationSource corsConfigurationSource) {
         this.securityFilter = securityFilter;
         this.corsConfigurationSource = corsConfigurationSource;
+    }
+
+    // Garante que o filtro do CORS antigo seja injetado com prioridade máxima antes do Security barrar
+    @Bean
+    public FilterRegistrationBean<CorsFilter> corsFilterRegistrationBean() {
+        FilterRegistrationBean<CorsFilter> bean = new FilterRegistrationBean<>(
+                new CorsFilter(this.corsConfigurationSource)
+        );
+        bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return bean;
     }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
-
-    // REMOVIDO: O webSecurityCustomizer ignorando /uploads/** pode conflitar com o FilterChain.
-    // É mais seguro permitir o acesso dentro do filterChain abaixo.
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -42,20 +52,11 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Permite explicitamente as rotas de OPTIONS para evitar erro de CORS no pre-flight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        // 🚨 ADICIONE ESTA LINHA AQUI PARA LIBERAR O WEBSOCKET
                         .requestMatchers("/ws-docelivery/**").permitAll()
-
-                        // CORREÇÃO: Registre as rotas de autenticação de forma mais explícita
-                        // para garantir que o Spring não tente validar token nelas.
-                        .requestMatchers("/api/auth/login").permitAll()
-                        .requestMatchers("/api/auth/register").permitAll()
-                        .requestMatchers("/api/auth/confeiteiro/login").permitAll() // Rota específica do erro 500
-                        .requestMatchers("/api/auth/cliente/login").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
-
                         .requestMatchers("/uploads/**").permitAll()
+                        .requestMatchers("/imagens/**").permitAll()
 
                         // 1. ROTAS PÚBLICAS (GET)
                         .requestMatchers(HttpMethod.GET, "/api/stores/**").permitAll()
@@ -63,28 +64,32 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/combos/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/confeiteiro/public/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/confeiteiro/profile").permitAll() // 🟢 COLE ESSA LINHA EXATAMENTE AQUI!
+                        .requestMatchers(HttpMethod.GET, "/api/confeiteiro/profile").permitAll()
 
-                        // 2. GERENCIAMENTO DE PRODUTOS
-                        .requestMatchers(HttpMethod.POST, "/api/produtos/**").hasAnyRole("CONFEITEIRO", "MASTER")
-                        .requestMatchers(HttpMethod.PUT, "/api/produtos/**").hasAnyRole("CONFEITEIRO", "MASTER")
-                        .requestMatchers(HttpMethod.DELETE, "/api/produtos/**").hasAnyRole("CONFEITEIRO", "MASTER")
+                        // 2. GERENCIAMENTO DE PRODUTOS (Batendo com as Roles maiúsculas da sua classe Usuario)
+                        .requestMatchers(HttpMethod.POST, "/api/produtos/**").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_MASTER")
+                        .requestMatchers(HttpMethod.PUT, "/api/produtos/**").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_MASTER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/produtos/**").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_MASTER")
 
-                        // 3. PERFIL DO CONFEITEIRO E PEDIDOS (Ajuste de ordem)
+                        // 3. PERFIL DO CONFEITEIRO, LOJA E PEDIDOS
+                        .requestMatchers(HttpMethod.PUT, "/api/confeiteiro/loja/atualizar/**").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/confeiteiro/atualizar/**").authenticated()
-                        .requestMatchers("/api/pedidos/confeiteiro/**", "/api/pedidos/confeiteiros/**").hasAnyRole("CONFEITEIRO", "MASTER")
-                        .requestMatchers(HttpMethod.GET, "/api/confeite/iro/**").authenticated()
+                        .requestMatchers("/api/pedidos/confeiteiro/**", "/api/pedidos/confeiteiros/**").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_MASTER")
+                        .requestMatchers(HttpMethod.GET, "/api/confeiteiro/**").authenticated()
 
-                        .requestMatchers(HttpMethod.POST, "/api/pedidos/**").hasAnyRole("CLIENTE", "MASTER")
-                        .requestMatchers(HttpMethod.PATCH, "/api/pedidos/**").hasAnyRole("CONFEITEIRO", "MASTER")
-                        .requestMatchers(HttpMethod.GET, "/api/pedidos/**").authenticated()
+                        // 4. ATUALIZAÇÃO E ENVIO DE PEDIDOS
+                        .requestMatchers(HttpMethod.POST, "/api/pedidos", "/api/pedidos/**").hasAnyAuthority("ROLE_CLIENTE", "ROLE_MASTER")
+                        .requestMatchers(HttpMethod.PATCH, "/api/pedidos", "/api/pedidos/**").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_MASTER")
+                        .requestMatchers(HttpMethod.GET, "/api/pedidos", "/api/pedidos/**").authenticated()
 
-                        // 4. ÁREAS ESPECÍFICAS
-                        .requestMatchers("/api/cliente/**", "/api/clientes/**").hasAnyRole("CLIENTE", "MASTER")
-                        .requestMatchers("/api/entregador/**").hasAnyRole("ENTREGADOR", "MASTER")
-                        .requestMatchers("/api/admin/**").hasAnyRole("MASTER", "SUPORTE")
+                        // 5. LIBERAÇÃO DO MÓDULO FINANCEIRO
+                        .requestMatchers("/api/financeiro/**").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_MASTER")
 
-                        // 5. BLOQUEIO PADRÃO
+                        // 6. ÁREAS ESPECÍFICAS
+                        .requestMatchers("/api/cliente/**", "/api/clientes/**").hasAnyAuthority("ROLE_CLIENTE", "ROLE_MASTER")
+                        .requestMatchers("/api/entregador/**").hasAnyAuthority("ROLE_ENTREGADOR", "ROLE_MASTER")
+                        .requestMatchers("/api/admin/**").hasAnyAuthority("ROLE_MASTER", "ROLE_SUPORTE")
+
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(securityFilter, UsernamePasswordAuthenticationFilter.class)

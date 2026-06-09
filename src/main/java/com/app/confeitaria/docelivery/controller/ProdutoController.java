@@ -158,4 +158,12 @@ public class ProdutoController {
                     .body(Map.of("error", "Erro interno ao processar o kit: " + e.getMessage()));
         }
     }
+    // 7. VITRINE DO CLIENTE: Lista todos os produtos e kits cadastrados no sistema
+    @GetMapping
+    public ResponseEntity<List<Produto>> listarVitrineGeralCliente() {
+        // Busca tudo. Idealmente, no futuro você pode criar um método no Repository
+        // como 'findByCodStatusTrue' para trazer só os produtos ativos/disponíveis.
+        List<Produto> produtos = produtoRepository.findAll();
+        return ResponseEntity.ok(produtos);
+    }
 }

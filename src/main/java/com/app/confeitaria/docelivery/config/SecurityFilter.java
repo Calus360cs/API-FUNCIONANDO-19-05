@@ -35,30 +35,22 @@ public class SecurityFilter extends OncePerRequestFilter {
             var login = tokenService.validateToken(token);
 
             if (login != null && !login.isEmpty()) {
-                // Buscamos o usuário no banco
                 var userOptional = userRepository.findByEmail(login);
 
                 if (userOptional.isPresent()) {
                     var user = userOptional.get();
 
-                    // CORREÇÃO/CHECK: Verifique se o TipoUsuario ou as Authorities não estão nulas
-                    // Se o authorities estiver vazio ou nulo, o Spring Security pode barrar o acesso
-                    // Garanta que a lista de permissões tenha um tipo definido explicitamente
-                    var authorities = (user.getTipoUsuario() != null)
-                            ? user.getTipoUsuario().getGrantedAuthorities()
-                            : java.util.Collections.<org.springframework.security.core.GrantedAuthority>emptyList();
+                    // 🟢 CORREÇÃO DA QUEBRA: Usa diretamente o getAuthorities() da classe Usuario
+                    // que já possui a lógica de fallback segura ("ROLE_CLIENTE", etc.) em maiúsculo.
+                    var authorities = user.getAuthorities();
 
-                    // Agora o Spring saberá exatamente o que é 'authorities'
                     var authentication = new UsernamePasswordAuthenticationToken(user, null, authorities);
-
                     SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                    // Log de debug para você confirmar no console se o filtro rodou com sucesso
-                    System.out.println("DEBUG: Filtro processado para: " + login);
+                    System.out.println("DEBUG: Filtro processado com sucesso para: " + login + " | Permissões: " + authorities);
                 }
             }
         }
-        // IMPORTANTE: Esta linha deve estar FORA dos blocos 'if' para a requisição seguir viagem
         filterChain.doFilter(request, response);
     }
 

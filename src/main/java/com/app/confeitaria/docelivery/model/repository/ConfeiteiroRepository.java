@@ -12,19 +12,16 @@ import java.util.Optional;
 @Repository
 public interface ConfeiteiroRepository extends JpaRepository<Confeiteiro, Long> {
 
-    // Busca pelo e-mail (campo herdado de Usuario)
-    Optional<Confeiteiro> findByEmail(String email);
+    // O JOIN FETCH força o banco a trazer a loja grudada com o confeiteiro na mesma consulta
+    @Query("SELECT c FROM Confeiteiro c LEFT JOIN FETCH c.loja WHERE c.id = :id")
+    Optional<Confeiteiro> buscarComLojaPorId(@Param("id") Long id);
 
-    // Busca pelo CNPJ (campo específico de Confeiteiro)
+    // Seus outros métodos continuam iguais abaixo...
+    Optional<Confeiteiro> findByEmail(String email);
     Optional<Confeiteiro> findByLoja_Cnpj(String cnpj);
 
-    /**
-     * CORREÇÃO: Busca por cidade (campo herdado de Usuario)
-     * Usamos JPQL para garantir que o Spring localize o atributo na hierarquia de classes.
-     */
     @Query("SELECT c FROM Confeiteiro c WHERE UPPER(c.cidade) = UPPER(:cidade)")
     List<Confeiteiro> findByCidadeIgnoreCase(@Param("cidade") String cidade);
 
-    // CORREÇÃO: Ajustado com o underline para navegar corretamente até a entidade Loja e ler o atributo nome
     Optional<Confeiteiro> findByLoja_NomeFantasiaIgnoreCase(String nomeLoja);
 }

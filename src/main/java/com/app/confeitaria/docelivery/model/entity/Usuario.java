@@ -2,6 +2,7 @@ package com.app.confeitaria.docelivery.model.entity;
 
 import com.app.confeitaria.docelivery.model.enums.TipoUsuario;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.*;
@@ -44,9 +45,9 @@ public class Usuario implements UserDetails {
 
     private LocalDate dataNascimento;
 
-    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
-    @JoinColumn(name = "loja_id", referencedColumnName = "id")
-    @JsonManagedReference // 🟢 ADICIONE ESSA ANOTAÇÃO AQUI
+    // Antes: @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToOne(mappedBy = "confeiteiro", cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
+    @JsonIgnoreProperties("confeiteiro")
     private Loja loja;
 
     // Removemos o insertable/updatable false para teste,

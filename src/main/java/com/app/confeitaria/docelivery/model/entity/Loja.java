@@ -1,8 +1,7 @@
 package com.app.confeitaria.docelivery.model.entity;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,15 +20,17 @@ public class Loja {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @OneToOne(mappedBy = "loja")
-    @JsonBackReference // 🟢 SUBSTITUA O @JsonIgnore POR ESTA ANOTAÇÃO
+    // Antes: @OneToOne(fetch = FetchType.LAZY)
+    @OneToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "confeiteiro_id")
+    @JsonIgnoreProperties("loja")
     private Confeiteiro confeiteiro;
 
     @OneToMany(mappedBy = "loja", fetch = FetchType.LAZY)
-    @JsonIgnore // 🟢 Garanta que este continue aqui para não vazar a lista infinita de produtos no perfil
+    @JsonIgnore
     private List<Produto> produtos;
 
-    @Column(nullable = false, length = 100)
+    @Column(name = "nome_fantasia", nullable = false, length = 100)
     private String nomeFantasia;
 
     @Column(nullable = false, unique = true, length = 18)
@@ -44,15 +45,27 @@ public class Loja {
     @Column(columnDefinition = "TEXT")
     private String descricao;
 
-    private String status = "PENDENTE";
+    private String status; // Deixamos sem valor fixo aqui para não sobrescrever o banco
 
+    @Column(name = "data_cadastro")
     private LocalDateTime dataCadastro;
 
-    // 💡 APENAS ADICIONE ESSA LINHA:
+    @Column(name = "foto_url")
     private String fotoUrl;
 
     @PrePersist
     protected void onCreate() {
-        dataCadastro = LocalDateTime.now();
+        this.dataCadastro = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = "PENDENTE"; // Só vira PENDENTE se for uma loja nova criada do zero
+        }
+    }
+
+    // MÉTODO AUXILIAR: Garante que os dois lados fiquem vinculados no banco
+    public void vincularConfeiteiro(Confeiteiro confeiteiro) {
+        this.confeiteiro = confeiteiro;
+        if (confeiteiro != null && confeiteiro.getLoja() != this) {
+            confeiteiro.setLoja(this);
+        }
     }
 }

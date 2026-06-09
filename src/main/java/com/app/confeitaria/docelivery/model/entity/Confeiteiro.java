@@ -1,5 +1,6 @@
 package com.app.confeitaria.docelivery.model.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -13,8 +14,8 @@ import lombok.*;
 @ToString(callSuper = true)
 public class Confeiteiro extends Usuario {
 
-    @OneToOne(cascade = CascadeType.MERGE, fetch = FetchType.EAGER) // Mudamos de ALL para MERGE para gerenciar manualmente no controller
-    @JoinColumn(name = "loja_id", referencedColumnName = "id")
+    @OneToOne(mappedBy = "confeiteiro", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @JsonIgnoreProperties("confeiteiro") // Evita recursão infinita no JSON
     private Loja loja;
 
     private String proprietario;
