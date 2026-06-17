@@ -20,9 +20,8 @@ public class Loja {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Antes: @OneToOne(fetch = FetchType.LAZY)
-    @OneToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "confeiteiro_id")
+    // Mudado: Agora ela apenas reflete o mapeamento que existe no Confeiteiro
+    @OneToOne(mappedBy = "loja", fetch = FetchType.EAGER)
     @JsonIgnoreProperties("loja")
     private Confeiteiro confeiteiro;
 
@@ -45,7 +44,7 @@ public class Loja {
     @Column(columnDefinition = "TEXT")
     private String descricao;
 
-    private String status; // Deixamos sem valor fixo aqui para não sobrescrever o banco
+    private String status;
 
     @Column(name = "data_cadastro")
     private LocalDateTime dataCadastro;
@@ -57,11 +56,11 @@ public class Loja {
     protected void onCreate() {
         this.dataCadastro = LocalDateTime.now();
         if (this.status == null) {
-            this.status = "PENDENTE"; // Só vira PENDENTE se for uma loja nova criada do zero
+            this.status = "PENDENTE";
         }
     }
 
-    // MÉTODO AUXILIAR: Garante que os dois lados fiquem vinculados no banco
+    // AJUSTADO: Método auxiliar corrigido para refletir a inversão
     public void vincularConfeiteiro(Confeiteiro confeiteiro) {
         this.confeiteiro = confeiteiro;
         if (confeiteiro != null && confeiteiro.getLoja() != this) {

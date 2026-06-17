@@ -40,7 +40,7 @@ public class LojasController {
     @GetMapping("/{id}/menu")
     public ResponseEntity<List<Produto>> buscarMenuDaLoja(@PathVariable Long id) {
         // Busca os produtos vinculados ao ID do confeiteiro
-        List<Produto> menu = produtoRepository.findByConfeiteiroId(id);
+        List<Produto> menu = produtoRepository.findKitsByConfeiteiroId(id);
         return ResponseEntity.ok(menu);
     }
 }

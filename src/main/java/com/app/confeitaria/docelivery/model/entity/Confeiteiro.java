@@ -5,17 +5,19 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@DiscriminatorValue("CONFEITEIRO") // Vincula com a coluna tipo_usuario
+@DiscriminatorValue("CONFEITEIRO")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@EqualsAndHashCode(callSuper = true) // 🟢 CRÍTICO: Faz o Lombok incluir os getters/setters da classe pai Usuario
+@EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
 public class Confeiteiro extends Usuario {
 
-    @OneToOne(mappedBy = "confeiteiro", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    @JsonIgnoreProperties("confeiteiro") // Evita recursão infinita no JSON
+    // AGORA SIM: O Confeiteiro vira o dono da relação e cria a coluna física 'loja_id'
+    @OneToOne(cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
+    @JoinColumn(name = "loja_id", referencedColumnName = "id") // Garante o nome padrão e limpo
+    @JsonIgnoreProperties("confeiteiro")
     private Loja loja;
 
     private String proprietario;

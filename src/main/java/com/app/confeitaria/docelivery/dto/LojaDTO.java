@@ -1,9 +1,12 @@
 package com.app.confeitaria.docelivery.dto;
 
+import com.app.confeitaria.docelivery.model.entity.Produto;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+
+import java.util.List;
 
 @Getter
 @Setter
@@ -19,4 +22,7 @@ public class LojaDTO {
     // ADICIONE ESTES DOIS CAMPOS ABAIXO:
     private String endereco;
     private String fotoUrl;
+
+    // 🟢 ADICIONE A LISTA DE PRODUTOS AQUI:
+    private List<Produto> produtos;
 }

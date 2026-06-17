@@ -11,10 +11,15 @@ import java.util.List;
 @Repository
 public interface ProdutoRepository extends JpaRepository<Produto, Long> {
 
-    // 🟢 CORREÇÃO: Alterado de p.itensDoKit para p.itens para refletir a nova modelagem de quantidade
-    @Query("SELECT DISTINCT p FROM Produto p LEFT JOIN FETCH p.itens WHERE p.confeiteiro.id = :id")
-    List<Produto> findByConfeiteiroId(@Param("id") Long id);
+    // 1. Busca apenas PRODUTOS NORMAIS (Onde a lista de itens está VAZIA)
+    @Query("SELECT DISTINCT p FROM Produto p LEFT JOIN FETCH p.itens WHERE p.confeiteiro.id = :id AND p.itens IS EMPTY")
+    List<Produto> findProdutosComunsByConfeiteiroId(@Param("id") Long id);
 
+    // 2. Busca apenas KITS (Onde a lista de itens NÃO está vazia)
+    @Query("SELECT DISTINCT p FROM Produto p LEFT JOIN FETCH p.itens WHERE p.confeiteiro.id = :id AND p.itens IS NOT EMPTY")
+    List<Produto> findKitsByConfeiteiroId(@Param("id") Long id);
+
+    // Mantém sua busca de categorias intacta
     @Query("SELECT DISTINCT p.categoria FROM Produto p WHERE p.categoria IS NOT NULL")
     List<Categoria> findDistinctCategorias();
 }

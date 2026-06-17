@@ -1,6 +1,7 @@
 package com.app.confeitaria.docelivery.service;
 
 import com.app.confeitaria.docelivery.model.entity.Confeiteiro;
+import com.app.confeitaria.docelivery.model.entity.Loja;
 import com.app.confeitaria.docelivery.model.entity.Usuario;
 import com.app.confeitaria.docelivery.model.repository.ConfeiteiroRepository;
 import com.app.confeitaria.docelivery.model.repository.UsuarioRepository;
@@ -36,8 +37,19 @@ public class UsuarioService {
         if (usuarioRepository.existsByCpf(confeiteiro.getCpf())) {
             throw new RuntimeException("CPF já cadastrado no sistema!");
         }
-        // Criptografa a senha antes de salvar no banco
+
+        // Criptografa a senha antes de salvar
         confeiteiro.setSenha(passwordEncoder.encode(confeiteiro.getSenha()));
+
+        // 🟢 ADICIONE ESTE BLOCO AQUI:
+        // Garante que o objeto Loja conheça o Confeiteiro pai antes de ir para o banco
+        if (confeiteiro.getLoja() != null) {
+            Loja loja = confeiteiro.getLoja();
+            loja.setConfeiteiro(confeiteiro); // Vincula o Confeiteiro dentro da Loja em memória
+        }
+
+        // Agora, ao salvar o Confeiteiro, o CascadeType.ALL vai propagar para a loja
+        // contendo o ID do confeiteiro preenchido perfeitamente!
         return confeiteiroRepository.save(confeiteiro);
     }
 

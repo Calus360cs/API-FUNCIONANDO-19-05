@@ -9,6 +9,7 @@ import com.app.confeitaria.docelivery.model.repository.CategoriaRepository;
 import com.app.confeitaria.docelivery.service.ProdutoService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -46,11 +47,13 @@ public class ProdutoController {
                     .orElseThrow(() -> new RuntimeException("Confeiteiro não encontrado"));
 
             Produto produto = new Produto();
+            // 🟢 SINTAXE CORRETA PARA RECORD: nome(), descricao(), preco(), estoque()
             produto.setNome(dto.nome());
             produto.setDescricao(dto.descricao());
             produto.setPreco(dto.preco());
             produto.setEstoque(dto.estoque());
             produto.setConfeiteiro(confeiteiro);
+            produto.setCodStatus(true); // Nasce ativo por padrão
 
             if (dto.categoriaId() != null) {
                 Categoria categoria = categoriaRepository.findById(dto.categoriaId())
@@ -69,60 +72,73 @@ public class ProdutoController {
         }
     }
 
-    // 2. ATUALIZAR PRODUTO NORMAL
+    // 2. ALTERAR PRODUTO NORMAL
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Transactional
     public ResponseEntity<?> update(
             @PathVariable Long id,
             @RequestPart("produto") ProdutoDTO dto,
             @RequestPart(value = "imagem", required = false) MultipartFile imagem) {
         try {
-            Produto produtoExistente = produtoRepository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Produto não encontrado"));
-
-            produtoExistente.setNome(dto.nome());
-            produtoExistente.setDescricao(dto.descricao());
-            produtoExistente.setPreco(dto.preco());
-            produtoExistente.setEstoque(dto.estoque());
-
-            if (dto.categoriaId() != null) {
-                Categoria categoria = categoriaRepository.findById(dto.categoriaId())
-                        .orElseThrow(() -> new RuntimeException("Categoria não encontrada"));
-                produtoExistente.setCategoria(categoria);
-            }
-
-            if (imagem != null && !imagem.isEmpty()) {
-                produtoExistente.setImagemUrl(produtoService.salvarFoto(imagem));
-            }
-
-            return ResponseEntity.ok(produtoRepository.save(produtoExistente));
+            Produto produtoAtualizado = produtoService.alterarProduto(id, dto, imagem);
+            return ResponseEntity.ok(produtoAtualizado);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erro ao atualizar: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Erro ao atualizar: " + e.getMessage()));
         }
     }
 
-    // 3. BUSCAR POR LOJA / CONFEITEIRO
+    // 3. BUSCAR POR LOJA / CONFEITEIRO (Mude para chamar o método de produtos comuns)
     @GetMapping("/store/{id}")
     public ResponseEntity<?> getByStore(@PathVariable Long id) {
-        List<Produto> produtos = produtoRepository.findByConfeiteiroId(id);
+        List<Produto> produtos = produtoRepository.findProdutosComunsByConfeiteiroId(id);
         return ResponseEntity.ok(produtos);
     }
 
-    // 4. DELETAR PRODUTO OU KIT
-    @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable Long id) {
-        return produtoRepository.findById(id).map(p -> {
-            produtoRepository.delete(p);
+    // 4. DESATIVAR PRODUTO
+    @PutMapping("/{id}/desativar")
+    public ResponseEntity<?> desativar(@PathVariable Long id) {
+        try {
+            produtoService.desativarProduto(id);
             return ResponseEntity.noContent().build();
-        }).orElse(ResponseEntity.notFound().build());
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        }
     }
 
-    // 5. LISTAR KITS DO CONFEITEIRO
+    // 5. EXCLUIR PRODUTO NORMAL
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> delete(@PathVariable Long id) {
+        try {
+            produtoService.excluirFisicamente(id);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", e.getMessage()));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // 5.1 EXCLUIR PRODUTO KIT (Rota nova que o front-end chama)
+    @DeleteMapping("/kit/{id}")
+    public ResponseEntity<?> deleteKit(@PathVariable Long id) {
+        try {
+            produtoService.excluirKitFisicamente(id);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", e.getMessage()));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // 6. LISTAR KITS DO CONFEITEIRO (Mude para chamar o método de kits)
     @GetMapping("/kit/confeiteiro/{id}")
     public ResponseEntity<?> getKitsByConfeiteiro(@PathVariable Long id) {
         try {
-            List<Produto> kits = produtoRepository.findByConfeiteiroId(id);
+            List<Produto> kits = produtoRepository.findKitsByConfeiteiroId(id);
             return ResponseEntity.ok(kits);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -130,21 +146,17 @@ public class ProdutoController {
         }
     }
 
-    // 6. ROTA AJUSTADA: CADASTRAR KIT COM IMAGEM EM UMA ÚNICA REQUISIÇÃO
+    // 7. CADASTRAR KIT
     @PostMapping(value = "/kit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> criarKit(
             @RequestPart("kit") KitRequestDTO kitDTO,
             @RequestPart(value = "imagem", required = false) MultipartFile imagem) {
         try {
-            // 1. Chama o service que monta toda a estrutura do Kit e seus itens
             Produto kit = produtoService.cadastrarKit(kitDTO);
 
-            // 2. Se o usuário enviou uma imagem na tela do React, salva e associa ao Kit
             if (imagem != null && !imagem.isEmpty()) {
                 String nomeImagem = produtoService.salvarFoto(imagem);
-                kit.setImagemUrl(nomeImagem); // 🟢 Vincula o nome da imagem salva
-
-                // Salva novamente para persistir com a imagem inclusa
+                kit.setImagemUrl(nomeImagem);
                 kit = produtoRepository.save(kit);
             }
 
@@ -158,11 +170,10 @@ public class ProdutoController {
                     .body(Map.of("error", "Erro interno ao processar o kit: " + e.getMessage()));
         }
     }
-    // 7. VITRINE DO CLIENTE: Lista todos os produtos e kits cadastrados no sistema
+
+    // 8. VITRINE DO CLIENTE
     @GetMapping
     public ResponseEntity<List<Produto>> listarVitrineGeralCliente() {
-        // Busca tudo. Idealmente, no futuro você pode criar um método no Repository
-        // como 'findByCodStatusTrue' para trazer só os produtos ativos/disponíveis.
         List<Produto> produtos = produtoRepository.findAll();
         return ResponseEntity.ok(produtos);
     }

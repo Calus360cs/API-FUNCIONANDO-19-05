@@ -15,7 +15,7 @@ public class ClienteController {
     @Autowired
     private ClienteRepository clienteRepository;
 
-    @PutMapping("cliente/atualizar/{id}")
+    @PutMapping("/atualizar/{id}")
     @Transactional
     public ResponseEntity<?> atualizar(@PathVariable Long id, @RequestBody Cliente dados) {
         // Log de depuração - verifique isso no console do Spring!

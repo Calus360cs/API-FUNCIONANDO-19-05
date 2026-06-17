@@ -55,12 +55,17 @@ public class Produto {
     @JsonIgnore
     private Loja loja;
 
-    // 🟢 CORREÇÃO: Mantido apenas a relação via KitItem (com controle de quantidade)
-    // 🟢 ADICIONADO: @JsonIgnore aqui para sumir de VEZ com o erro 'Cannot lazily initialize collection'
+    // 🟢 CORREÇÃO: Removido o CascadeType.ALL para evitar que o produto comum seja deletado junto com o kit
+    // 🟢 MANTIDO: orphanRemoval=true limpa as linhas da tabela 'kit_item' automaticamente ao esvaziar a lista
     @JsonIgnore
-    @OneToMany(mappedBy = "kit", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    @Builder.Default // Garante que o Builder do Lombok não deixe essa lista nula
+    @OneToMany(mappedBy = "kit", cascade = {CascadeType.PERSIST, CascadeType.MERGE}, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
     private List<KitItem> itens = new ArrayList<>();
+
+    @OneToOne(cascade = CascadeType.REMOVE, orphanRemoval = true, fetch = FetchType.LAZY)
+    @JoinColumn(name = "foto_id") // Ou o nome exato da coluna FK na tabela produto, se houver
+    private FotoProduto foto;
+
 
     // 🔴 REMOVIDO: O bloco @ManyToMany antigo (itensDoKit) foi removido
     // para não inflar o banco com tabelas duplicadas desnecessárias.

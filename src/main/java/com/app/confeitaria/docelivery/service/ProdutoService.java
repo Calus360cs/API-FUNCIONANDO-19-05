@@ -1,10 +1,10 @@
 package com.app.confeitaria.docelivery.service;
 
-import com.app.confeitaria.docelivery.dto.KitItemRequestDTO; // Ajuste o pacote se necessário
-import com.app.confeitaria.docelivery.dto.KitRequestDTO;     // Ajuste o pacote se necessário
+import com.app.confeitaria.docelivery.dto.KitItemRequestDTO;
+import com.app.confeitaria.docelivery.dto.KitRequestDTO;
 import com.app.confeitaria.docelivery.dto.ProdutoDTO;
 import com.app.confeitaria.docelivery.model.entity.Categoria;
-import com.app.confeitaria.docelivery.model.entity.KitItem;  // Sua entidade associativa
+import com.app.confeitaria.docelivery.model.entity.KitItem;
 import com.app.confeitaria.docelivery.model.entity.Produto;
 import com.app.confeitaria.docelivery.model.entity.Usuario;
 import com.app.confeitaria.docelivery.model.repository.CategoriaRepository;
@@ -12,6 +12,7 @@ import com.app.confeitaria.docelivery.model.repository.ProdutoRepository;
 import com.app.confeitaria.docelivery.model.repository.UsuarioRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -29,18 +30,26 @@ public class ProdutoService {
     private ProdutoRepository produtoRepository;
 
     @Autowired
-    private UsuarioRepository usuarioRepository; // Injetado para validar o dono do kit (loja/confeiteiro)
+    private UsuarioRepository usuarioRepository;
 
     @Autowired
-    private CategoriaRepository categoriaRepository; // 🟢 Injeção correta
+    private CategoriaRepository categoriaRepository;
 
     @Value("${app.upload.dir}")
     private String uploadDir;
 
-    // 1. SEU MÉTODO EXISTENTE (PRODUTO COMUM)
+    // 1. CRIAR PRODUTO COMUM
+    @Transactional
     public Produto criarProdutoComFoto(ProdutoDTO dto, MultipartFile file) {
         Produto produto = new Produto();
-        // Mapear dados do DTO para a entidade...
+        // 🟢 CORRIGIDO PARA RECORD: de dto.getNome() para dto.nome()
+        produto.setNome(dto.nome());
+        produto.setDescricao(dto.descricao());
+        produto.setPreco(dto.preco());
+        produto.setEstoque(dto.estoque());
+        produto.setCodStatus(true); // Garante que nasce ativo
+
+        produto.setCategoriaId(dto.categoriaId());
 
         if (file != null && !file.isEmpty()) {
             String nomeSalvo = salvarFoto(file);
@@ -50,11 +59,9 @@ public class ProdutoService {
         return produtoRepository.save(produto);
     }
 
-    // 2. 🟢 NOVO MÉTODO: CADASTRAR KIT COM PRODUTOS EXISTENTES
+    // 2. CADASTRAR KIT COM PRODUTOS EXISTENTES
     @Transactional
     public Produto cadastrarKit(KitRequestDTO dto) {
-
-        // 1️⃣ Validação do ID do Confeiteiro
         if (dto.getConfeiteiroId() == null) {
             throw new IllegalArgumentException("O ID do confeiteiro não foi enviado pelo front-end.");
         }
@@ -62,15 +69,14 @@ public class ProdutoService {
         Usuario confeiteiro = usuarioRepository.findById(dto.getConfeiteiroId())
                 .orElseThrow(() -> new RuntimeException("Confeiteiro com ID " + dto.getConfeiteiroId() + " não foi encontrado."));
 
-        // B) Instancia o Kit como um novo Produto principal
         Produto kit = new Produto();
         kit.setNome(dto.getNome());
         kit.setDescricao(dto.getDescricao());
         kit.setPreco(dto.getPreco());
         kit.setConfeiteiro(confeiteiro);
         kit.setEstoque(9999);
+        kit.setCodStatus(true);
 
-        // 🟢 ADICIONE ESTE BLOCO PARA SETAR A CATEGORIA VINDA DO DTO
         if (dto.getCategoriaId() != null) {
             Categoria categoria = categoriaRepository.findById(dto.getCategoriaId())
                     .orElseThrow(() -> new RuntimeException("Categoria de ID " + dto.getCategoriaId() + " não encontrada."));
@@ -79,12 +85,8 @@ public class ProdutoService {
             throw new IllegalArgumentException("O campo categoriaId é obrigatório e não foi enviado no JSON.");
         }
 
-
-        // C) Percorre os itens enviados pelo React
         if (dto.getItens() != null && !dto.getItens().isEmpty()) {
             for (KitItemRequestDTO itemDto : dto.getItens()) {
-
-                // 2️⃣ Validação Crítica do ID do Produto dentro da lista
                 if (itemDto.getProdutoId() == null) {
                     throw new IllegalArgumentException("Um dos produtos adicionados ao kit está com o ID nulo/vazio.");
                 }
@@ -106,7 +108,53 @@ public class ProdutoService {
         return produtoRepository.save(kit);
     }
 
-    // 3. SEU MÉTODO EXISTENTE (SALVAR FOTO)
+    // 🌟 3. ALTERAR PRODUTO (Corrigido para usar a sintaxe limpa de Record)
+    @Transactional
+    public Produto alterarProduto(Long id, ProdutoDTO dto, MultipartFile file) {
+        Produto produtoExistente = produtoRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Produto com ID " + id + " não encontrado."));
+
+        // 🟢 CORRIGIDO PARA RECORD: usando nome(), descricao(), preco() e estoque()
+        produtoExistente.setNome(dto.nome());
+        produtoExistente.setDescricao(dto.descricao());
+        produtoExistente.setPreco(dto.preco());
+        produtoExistente.setEstoque(dto.estoque());
+
+        // Atualiza a categoria de forma segura (limpa se o DTO mandar null)
+        produtoExistente.setCategoriaId(dto.categoriaId());
+
+        if (file != null && !file.isEmpty()) {
+            String nomeSalvo = salvarFoto(file);
+            produtoExistente.setImagemUrl(nomeSalvo);
+        }
+
+        return produtoRepository.save(produtoExistente);
+    }
+
+    // 🌟 4. DESATIVAR PRODUTO (Inativação Lógica para não quebrar pedidos antigos)
+    @Transactional
+    public void desativarProduto(Long id) {
+        Produto produto = produtoRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Produto com ID " + id + " não encontrado."));
+
+        produto.setCodStatus(false); // Seta como indisponível no cardápio
+        produtoRepository.save(produto);
+    }
+
+    // 🌟 5. EXCLUIR PRODUTO (Deleção Física controlada com rollback se já houver vendas)
+    @Transactional
+    public void excluirFisicamente(Long id) {
+        Produto produto = produtoRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Produto com ID " + id + " não encontrado."));
+
+        try {
+            produtoRepository.delete(produto);
+        } catch (DataIntegrityViolationException e) {
+            throw new IllegalStateException("Não é possível excluir este produto de forma definitiva porque ele está vinculado ao histórico de pedidos de um cliente. Sugerimos usar a opção Desativar.");
+        }
+    }
+
+    // 6. SALVAR FOTO (MÉTODO EXISTENTE CORRETO)
     public String salvarFoto(MultipartFile file) {
         String nomeArquivo = System.currentTimeMillis() + "_" +
                 file.getOriginalFilename().replaceAll("[^a-zA-Z0-9\\.\\-]", "_");
@@ -122,6 +170,29 @@ public class ProdutoService {
             return nomeArquivo;
         } catch (IOException e) {
             throw new RuntimeException("Erro ao salvar a imagem no servidor", e);
+        }
+    }
+
+
+    // 🌟 5.1 EXCLUIR KIT DESVINCULANDO PRODUTOS (Para a Opção B)
+    @Transactional
+    public void excluirKitFisicamente(Long id) {
+        Produto kit = produtoRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Kit com ID " + id + " não encontrado."));
+
+        try {
+            // 1. Se o kit tiver itens, desvincula limpando a lista
+            if (kit.getItens() != null && !kit.getItens().isEmpty()) {
+                kit.getItens().clear();
+                // Força o Hibernate a commitar a limpeza da tabela intermediária 'kit_item' AGORA
+                produtoRepository.saveAndFlush(kit);
+            }
+
+            // 2. Com as amarrações desfeitas na tabela 'kit_item', removemos apenas o cabeçalho do kit
+            produtoRepository.delete(kit);
+
+        } catch (DataIntegrityViolationException e) {
+            throw new IllegalStateException("Não é possível excluir este kit porque ele está vinculado a pedidos antigos. Use a opção desativar.");
         }
     }
 }

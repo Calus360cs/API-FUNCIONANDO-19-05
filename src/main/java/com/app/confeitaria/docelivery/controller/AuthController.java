@@ -1,12 +1,15 @@
 package com.app.confeitaria.docelivery.controller;
 
+import com.app.confeitaria.docelivery.dto.UsuarioResponseDTO;
 import com.app.confeitaria.docelivery.model.entity.*;
 import com.app.confeitaria.docelivery.model.enums.TipoUsuario;
 import com.app.confeitaria.docelivery.model.repository.*;
 import com.app.confeitaria.docelivery.service.TokenService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -18,8 +21,12 @@ import java.util.Map;
 @CrossOrigin(origins = "*")
 public class AuthController {
 
-    private final UsuarioRepository usuarioRepository;
+
+    @Autowired
     private final ClienteRepository clienteRepository;
+
+
+    private final UsuarioRepository usuarioRepository;
     private final ConfeiteiroRepository confeiteiroRepository;
     private final EntregadorRepository entregadorRepository;
     private final PasswordEncoder passwordEncoder;
@@ -168,6 +175,31 @@ public class AuthController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", "Erro ao cadastrar entregador."));
         }
+    }
+
+
+
+    @GetMapping("/perfil")
+    public ResponseEntity<UsuarioResponseDTO> obterPerfilLogado(@AuthenticationPrincipal Usuario usuarioLogado) {
+        String apelido = "";
+
+        // Se o usuário logado for um cliente, buscamos os dados dele usando o email
+        if ("CLIENTE".equals(usuarioLogado.getTipoUsuario().name())) {
+            apelido = clienteRepository.buscarPorEmailDoUsuario(usuarioLogado.getEmail())
+                    .map(Cliente::getApelido)
+                    .orElse("");
+        }
+
+        UsuarioResponseDTO resposta = new UsuarioResponseDTO(
+                usuarioLogado.getId(),
+                usuarioLogado.getNome(),
+                usuarioLogado.getEmail(),
+                apelido,
+                usuarioLogado.getTipoUsuario().name(),
+                usuarioLogado.getAuthorities()
+        );
+
+        return ResponseEntity.ok(resposta);
     }
 
 

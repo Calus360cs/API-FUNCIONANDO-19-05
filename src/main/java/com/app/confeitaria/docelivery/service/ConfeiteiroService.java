@@ -5,14 +5,17 @@ import com.app.confeitaria.docelivery.dto.LojaDTO;
 import com.app.confeitaria.docelivery.model.entity.Confeiteiro;
 import com.app.confeitaria.docelivery.model.entity.Loja;
 import com.app.confeitaria.docelivery.model.entity.Usuario;
+import com.app.confeitaria.docelivery.model.entity.Produto; // Import da sua entidade Produto
 import com.app.confeitaria.docelivery.model.repository.ConfeiteiroRepository;
 import com.app.confeitaria.docelivery.model.repository.LojaRepository;
+import com.app.confeitaria.docelivery.model.repository.ProdutoRepository; // Import do seu Repositório de Produtos
 import com.app.confeitaria.docelivery.model.repository.UsuarioRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.List; // Import necessário para reconhecer coleções do tipo List
 
 @Service
 public class ConfeiteiroService {
@@ -25,6 +28,9 @@ public class ConfeiteiroService {
 
     @Autowired
     private UsuarioRepository usuarioRepository;
+
+    @Autowired
+    private ProdutoRepository produtoRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -82,28 +88,30 @@ public class ConfeiteiroService {
     }
 
     @Transactional
-    public Confeiteiro atualizarPerfilLoja(Long idConfeiteiro, LojaDTO dto) {
-        // 1. Busca o confeiteiro real
-        Confeiteiro confeiteiro = repository.buscarComLojaPorId(idConfeiteiro)
-                .orElseThrow(() -> new RuntimeException("Confeiteiro não encontrado com o ID: " + idConfeiteiro));
+    public Confeiteiro atualizarPerfilLoja(Long idLoja, LojaDTO dto) {
+        // 1. Busca primeiro a loja pelo ID dela (que é o número 4 que o front está a enviar)
+        Loja loja = lojaRepository.findById(idLoja)
+                .orElseThrow(() -> new RuntimeException("Loja não encontrada com o ID: " + idLoja));
 
-        // 2. Tenta buscar a loja pelo ID do confeiteiro ou reaproveita a que está na entidade
-        Loja loja = lojaRepository.findByConfeiteiroId(idConfeiteiro)
-                .orElseGet(() -> confeiteiro.getLoja() != null ? confeiteiro.getLoja() : new Loja());
+        // 2. Pega o confeiteiro dono dessa loja
+        Confeiteiro confeiteiro = loja.getConfeiteiro();
+        if (confeiteiro == null) {
+            throw new RuntimeException("Nenhum confeiteiro vinculado a esta loja.");
+        }
 
-        // 3. Atualiza os campos vindos do DTO
+        // 3. Atualiza os campos vindos do DTO na loja
         if (dto.getNomeFantasia() != null && !dto.getNomeFantasia().trim().isEmpty()) {
             loja.setNomeFantasia(dto.getNomeFantasia());
         }
 
-        // Verificação de CNPJ: Garanta que o CNPJ enviado no Front não seja repetido no banco por outro ID
         if (dto.getCnpj() != null && !dto.getCnpj().trim().isEmpty()) {
-            loja.setCnpj(dto.getCnpj().replaceAll("[^0-9]", "")); // Limpa pontos e barras se houver
+            loja.setCnpj(dto.getCnpj().replaceAll("[^0-9]", ""));
         }
 
         if (dto.getTelefone() != null && !dto.getTelefone().trim().isEmpty()) {
             loja.setTelefone(dto.getTelefone());
         }
+
         if (dto.getEndereco() != null && !dto.getEndereco().trim().isEmpty()) {
             loja.setEndereco(dto.getEndereco());
         }
@@ -116,14 +124,9 @@ public class ConfeiteiroService {
 
         loja.setStatus("ATIVO");
 
-        // 4. Estabelece o vínculo bidirecional estrito antes de salvar
-        loja.vincularConfeiteiro(confeiteiro);
-        confeiteiro.setLoja(loja);
-
-        // 5. Salva primeiro a loja para garantir a persistência da FK, depois atualiza o confeiteiro
+        // Se você inverteu a relação e tirou a coluna confeiteiro_id da loja:
         Loja lojaSalva = lojaRepository.save(loja);
-        confeiteiro.setLoja(lojaSalva);
-
+        confeiteiro.setLoja(lojaSalva); // O Confeiteiro recebe a loja salva e atualiza seu loja_id
         return repository.save(confeiteiro);
     }
 
@@ -158,8 +161,8 @@ public class ConfeiteiroService {
         lojaRepository.save(loja);
     }
 
-
-    public ConfeiteiroDTO converterParaDTO(Usuario confeiteiroEntity) {
+    // 🟢 CORRIGIDO: Alterado de Usuario para Confeiteiro para o Java achar o .getLoja() e injetado a busca de produtos com o método correto do repositório
+    public ConfeiteiroDTO converterParaDTO(Confeiteiro confeiteiroEntity) {
         ConfeiteiroDTO dto = new ConfeiteiroDTO();
         dto.setId(confeiteiroEntity.getId());
         dto.setNome(confeiteiroEntity.getNome());
@@ -175,7 +178,7 @@ public class ConfeiteiroService {
         dto.setCidade(confeiteiroEntity.getCidade());
         dto.setUf(confeiteiroEntity.getUf());
 
-        // Instancia e converte a loja apenas se o confeiteiro possuir uma cadastrada
+        // Agora o método getLoja() compila perfeitamente porque a tipagem é Confeiteiro
         if (confeiteiroEntity.getLoja() != null) {
             LojaDTO lojaDTO = new LojaDTO();
             lojaDTO.setId(confeiteiroEntity.getLoja().getId());
@@ -186,9 +189,14 @@ public class ConfeiteiroService {
             lojaDTO.setEndereco(confeiteiroEntity.getLoja().getEndereco());
             lojaDTO.setFotoUrl(confeiteiroEntity.getLoja().getFotoUrl());
 
-            dto.setLoja(lojaDTO); // Vincula a subclasse loja ao DTO principal
+            // 🟢 AJUSTADO: Usando o método real do seu repositório (findByConfeiteiroId)
+            // Passamos o ID do Confeiteiro (confeiteiroEntity.getId()) que está vinculado à loja
+            List<Produto> listaProdutos = produtoRepository.findKitsByConfeiteiroId(confeiteiroEntity.getId());
+            lojaDTO.setProdutos(listaProdutos);
+
+            dto.setLoja(lojaDTO);
         } else {
-            dto.setLoja(null); // Explicitamente nulo se não houver loja vinculada
+            dto.setLoja(null);
         }
 
         return dto;

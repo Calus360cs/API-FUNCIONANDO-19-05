@@ -59,26 +59,28 @@ public class ConfeiteiroController {
      * Mapeia exatamente a URL: http://localhost:8080/api/confeiteiro/loja/atualizar/{id}
      * que o seu front-end do React está chamando.
      */
-    @PutMapping("/loja/atualizar/{id}")
-    public ResponseEntity<?> atualizarPerfilLoja(@PathVariable Long id, @RequestBody LojaDTO lojaDTO) {
+    @PutMapping("/loja/atualizar/{idLoja}")
+    public ResponseEntity<?> atualizarPerfilLoja(@PathVariable Long idLoja, @RequestBody LojaDTO lojaDTO) {
         try {
-            System.out.println("Recebendo requisição PUT em /loja/atualizar/" + id);
+            System.out.println("Recebendo requisição PUT em /loja/atualizar/" + idLoja);
             System.out.println("Payload recebido: Nome Fantasia -> " + lojaDTO.getNomeFantasia());
 
-            // Processa a regra no service (usando aquela versão corrigida que evita o INSERT duplicado)
-            com.app.confeitaria.docelivery.model.entity.Confeiteiro confeiteiroAtualizado = service.atualizarPerfilLoja(id, lojaDTO);
+            // AJUSTADO: Passamos o idLoja para o service tratar a busca corretamente pela Loja
+            com.app.confeitaria.docelivery.model.entity.Confeiteiro confeiteiroAtualizado = service.atualizarPerfilLoja(idLoja, lojaDTO);
 
-            // CORREÇÃO DE RESPOSTA: Retorna o objeto atualizado completo para o React atualizar o Contexto na hora
+            // Retorna o objeto atualizado completo para o React
             return ResponseEntity.ok(confeiteiroAtualizado);
 
         } catch (RuntimeException e) {
-            // Se o erro for de negócio (Confeiteiro não encontrado, etc), avisa com Bad Request em vez de confundir com rota 404
             System.err.println("Erro de regra de negócio: " + e.getMessage());
+            // Retorna o JSON estruturado para o Axios capturar no front-end
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body("{\"error\": \"" + e.getMessage() + "\"}");
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body("{\"error\": \"Erro interno no servidor ao salvar no banco: " + e.getMessage() + "\"}");
         }
     }
