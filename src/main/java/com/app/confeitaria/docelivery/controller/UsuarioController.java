@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/usuario")
-@CrossOrigin("*") // Permite que o seu Frontend (React) acesse a API
 public class UsuarioController {
 
     @Autowired

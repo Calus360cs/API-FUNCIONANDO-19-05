@@ -6,10 +6,12 @@ import java.util.List;
 
 public record PedidoDTO(
         Long id,
+        Long clienteId,       // 🟢 ADICIONADO: Necessário para o PagamentoController localizar o cliente
+        Long lojaId,          // 🟢 ADICIONADO: Necessário para vincular à loja correta do confeiteiro
         String nomeCliente,
         String telefoneCliente,
         String enderecoEntrega,
-        String status, // Ex: "NOVO", "PREPARANDO", "SAIU_PARA_ENTREGA"
+        String status,
         BigDecimal total,
         LocalDateTime dataCriacao,
         List<ItemPedidoDTO> itens

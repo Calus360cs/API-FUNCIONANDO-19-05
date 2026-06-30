@@ -19,6 +19,7 @@ import java.util.Collections;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(value = {"password", "username", "authorities", "accountNonExpired", "accountNonLocked", "credentialsNonExpired", "enabled"}, allowGetters = false)
 public class Usuario implements UserDetails {
 
     @Id

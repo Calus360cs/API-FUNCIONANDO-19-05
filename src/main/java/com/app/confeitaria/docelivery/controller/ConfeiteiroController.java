@@ -1,22 +1,23 @@
 package com.app.confeitaria.docelivery.controller;
 
-import com.app.confeitaria.docelivery.dto.ConfeiteiroDTO; // Import do seu novo ConfeiteiroDTO
-import com.app.confeitaria.docelivery.dto.LojaDTO; // Import do seu novo DTO
+import com.app.confeitaria.docelivery.dto.ConfeiteiroDTO;
+import com.app.confeitaria.docelivery.dto.LojaDTO;
 import com.app.confeitaria.docelivery.model.entity.Confeiteiro;
 import com.app.confeitaria.docelivery.model.repository.ConfeiteiroRepository;
 import com.app.confeitaria.docelivery.model.repository.UsuarioRepository;
 import com.app.confeitaria.docelivery.service.ConfeiteiroService;
+import com.fasterxml.jackson.databind.ObjectMapper; // Mantém a importação
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/confeiteiro")
-@CrossOrigin("*")
 public class ConfeiteiroController {
 
     @Autowired
@@ -26,15 +27,16 @@ public class ConfeiteiroController {
     private UsuarioRepository usuarioRepository;
 
     @Autowired
-    private ConfeiteiroService service;
+    private ConfeiteiroService confeiteiroService;
 
-    @Autowired
-    private ConfeiteiroService confeiteiroService; // Injete o service caso ainda não esteja injetado
+    // CORREÇÃO SÊNIOR: Removido o @Autowired que causava o travamento na inicialização.
+    // Instanciar diretamente o ObjectMapper elimina a necessidade de o Spring procurar um Bean gerenciado.
+    // Como a classe é thread-safe para operações de leitura/escrita, essa prática é segura e performática.
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @GetMapping("/{id}")
     public ResponseEntity<?> buscar(@PathVariable Long id) {
         try {
-            // AJUSTADO: Agora chama o método do Service que retorna o DTO estruturado com a Loja interna
             ConfeiteiroDTO confeiteiroDTO = confeiteiroService.buscarConfeiteiroPorId(id);
             return ResponseEntity.ok(confeiteiroDTO);
         } catch (RuntimeException e) {
@@ -42,11 +44,10 @@ public class ConfeiteiroController {
         }
     }
 
-
-    @PutMapping(value = "/atualizar/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> atualizarConfeiteiro(@PathVariable Long id, @ModelAttribute Confeiteiro dadosAtualizados) {
+    @PutMapping("/atualizar/{id}")
+    public ResponseEntity<?> atualizarConfeiteiro(@PathVariable Long id, @RequestBody Confeiteiro dadosAtualizados) {
         try {
-            Confeiteiro salvo = service.atualizarConfeiteiro(id, dadosAtualizados);
+            Confeiteiro salvo = confeiteiroService.atualizarConfeiteiro(id, dadosAtualizados);
             return ResponseEntity.ok(salvo);
         } catch (Exception e) {
             e.printStackTrace();
@@ -54,26 +55,22 @@ public class ConfeiteiroController {
         }
     }
 
-    /**
-     * NOVO ENDPOINT ATUALIZADO (PASSO 2)
-     * Mapeia exatamente a URL: http://localhost:8080/api/confeiteiro/loja/atualizar/{id}
-     * que o seu front-end do React está chamando.
-     */
-    @PutMapping("/loja/atualizar/{idLoja}")
-    public ResponseEntity<?> atualizarPerfilLoja(@PathVariable Long idLoja, @RequestBody LojaDTO lojaDTO) {
+    @PutMapping(value = "/loja/atualizar/{idConfeiteiro}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> atualizarPerfilLoja(
+            @PathVariable Long idConfeiteiro,
+            @RequestPart("dados") String lojaDtoJson,
+            @RequestPart(value = "imagem", required = false) MultipartFile imagem
+    ) {
         try {
-            System.out.println("Recebendo requisição PUT em /loja/atualizar/" + idLoja);
-            System.out.println("Payload recebido: Nome Fantasia -> " + lojaDTO.getNomeFantasia());
+            System.out.println("[API] Processando atualização de loja multipart para o Confeiteiro ID: " + idConfeiteiro);
 
-            // AJUSTADO: Passamos o idLoja para o service tratar a busca corretamente pela Loja
-            com.app.confeitaria.docelivery.model.entity.Confeiteiro confeiteiroAtualizado = service.atualizarPerfilLoja(idLoja, lojaDTO);
+            // O uso aqui continua idêntico, mas agora sem depender da injeção do Spring
+            LojaDTO lojaDTO = objectMapper.readValue(lojaDtoJson, LojaDTO.class);
 
-            // Retorna o objeto atualizado completo para o React
+            Confeiteiro confeiteiroAtualizado = confeiteiroService.atualizarPerfilLoja(idConfeiteiro, lojaDTO, imagem);
+
             return ResponseEntity.ok(confeiteiroAtualizado);
-
         } catch (RuntimeException e) {
-            System.err.println("Erro de regra de negócio: " + e.getMessage());
-            // Retorna o JSON estruturado para o Axios capturar no front-end
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body("{\"error\": \"" + e.getMessage() + "\"}");
@@ -81,15 +78,14 @@ public class ConfeiteiroController {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body("{\"error\": \"Erro interno no servidor ao salvar no banco: " + e.getMessage() + "\"}");
+                    .body("{\"error\": \"Erro interno ao processar dados da loja: " + e.getMessage() + "\"}");
         }
     }
-
 
     @GetMapping("/profile")
     public ResponseEntity<?> obterPerfilPorEmail(@RequestParam String email) {
         try {
-            Object perfil = service.obterPerfilPorEmail(email);
+            Object perfil = confeiteiroService.obterPerfilPorEmail(email);
             return ResponseEntity.ok(perfil);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();

@@ -4,18 +4,25 @@ import com.app.confeitaria.docelivery.dto.ConfeiteiroDTO;
 import com.app.confeitaria.docelivery.dto.LojaDTO;
 import com.app.confeitaria.docelivery.model.entity.Confeiteiro;
 import com.app.confeitaria.docelivery.model.entity.Loja;
-import com.app.confeitaria.docelivery.model.entity.Usuario;
-import com.app.confeitaria.docelivery.model.entity.Produto; // Import da sua entidade Produto
+import com.app.confeitaria.docelivery.model.entity.Produto;
 import com.app.confeitaria.docelivery.model.repository.ConfeiteiroRepository;
 import com.app.confeitaria.docelivery.model.repository.LojaRepository;
-import com.app.confeitaria.docelivery.model.repository.ProdutoRepository; // Import do seu Repositório de Produtos
+import com.app.confeitaria.docelivery.model.repository.ProdutoRepository;
 import com.app.confeitaria.docelivery.model.repository.UsuarioRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.List; // Import necessário para reconhecer coleções do tipo List
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.List;
 
 @Service
 public class ConfeiteiroService {
@@ -32,31 +39,22 @@ public class ConfeiteiroService {
     @Autowired
     private ProdutoRepository produtoRepository;
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     @PersistenceContext
     private EntityManager entityManager;
 
-    /**
-     * MÉTODO ADICIONADO PARA O CONTROLLER FUNCIONAR DIREITO:
-     * Ele busca a entidade real com o cache limpo e converte para o DTO esperado pelo front-end.
-     */
+    private static final String RAIZ_ARMAZENAMENTO = "C:/docelivery-storage/";
+
     @Transactional(readOnly = true)
     public ConfeiteiroDTO buscarConfeiteiroPorId(Long id) {
-        // Aproveita a busca do buscarPorIdReal que limpa o cache do Hibernate
         Confeiteiro confeiteiro = buscarPorIdReal(id);
-
-        // Converte a entidade Confeiteiro encontrada para o ConfeiteiroDTO
         return converterParaDTO(confeiteiro);
     }
 
-    /**
-     * 🟢 NOVO MÉTODO CRÍTICO: Usado pelo seu Controller para buscar os dados reais por ID
-     * Força a limpeza do cache de sessão para garantir que o nó da loja não venha nulo
-     */
     @Transactional(readOnly = true)
     public Confeiteiro buscarPorIdReal(Long id) {
-        // Limpa o cache local do Hibernate para forçar o SQL com LEFT JOIN FETCH
-        entityManager.clear();
-
         return repository.buscarComLojaPorId(id)
                 .orElseThrow(() -> new RuntimeException("Confeiteiro não encontrado com o ID: " + id));
     }
@@ -77,6 +75,15 @@ public class ConfeiteiroService {
         if (dadosAtualizados.getCidade() != null) confeiteiro.setCidade(dadosAtualizados.getCidade());
         if (dadosAtualizados.getUf() != null) confeiteiro.setUf(dadosAtualizados.getUf());
         if (dadosAtualizados.getDataNascimento() != null) confeiteiro.setDataNascimento(dadosAtualizados.getDataNascimento());
+        if (dadosAtualizados.getEmail() != null) confeiteiro.setEmail(dadosAtualizados.getEmail());
+
+        if (dadosAtualizados.getSenha() != null && !dadosAtualizados.getSenha().isBlank()) {
+            confeiteiro.setSenha(passwordEncoder.encode(dadosAtualizados.getSenha()));
+        }
+
+        if (dadosAuthorized(dadosAtualizados.getProprietario())) confeiteiro.setProprietario(dadosAtualizados.getProprietario());
+        if (dadosAtualizados.getCategoria() != null) confeiteiro.setCategoria(dadosAtualizados.getCategoria());
+        if (dadosAtualizados.getPromocao() != null) confeiteiro.setPromocao(dadosAtualizados.getPromocao());
 
         if (dadosAtualizados.getLoja() != null && confeiteiro.getLoja() != null) {
             confeiteiro.getLoja().setNomeFantasia(dadosAtualizados.getLoja().getNomeFantasia());
@@ -87,69 +94,90 @@ public class ConfeiteiroService {
         return repository.save(confeiteiro);
     }
 
+    private boolean dadosAuthorized(String proprietario) {
+        return proprietario != null;
+    }
+
     @Transactional
-    public Confeiteiro atualizarPerfilLoja(Long idLoja, LojaDTO dto) {
-        // 1. Busca primeiro a loja pelo ID dela (que é o número 4 que o front está a enviar)
-        Loja loja = lojaRepository.findById(idLoja)
-                .orElseThrow(() -> new RuntimeException("Loja não encontrada com o ID: " + idLoja));
+    public Confeiteiro atualizarPerfilLoja(Long idConfeiteiro, LojaDTO dto, MultipartFile imagem) {
+        Confeiteiro confeiteiro = repository.buscarComLojaPorId(idConfeiteiro)
+                .orElseThrow(() -> new RuntimeException("Confeiteiro não encontrado com o ID: " + idConfeiteiro));
 
-        // 2. Pega o confeiteiro dono dessa loja
-        Confeiteiro confeiteiro = loja.getConfeiteiro();
-        if (confeiteiro == null) {
-            throw new RuntimeException("Nenhum confeiteiro vinculado a esta loja.");
+        Loja loja = confeiteiro.getLoja();
+        boolean lojaEhNova = (loja == null);
+        if (lojaEhNova) {
+            loja = new Loja();
         }
 
-        // 3. Atualiza os campos vindos do DTO na loja
-        if (dto.getNomeFantasia() != null && !dto.getNomeFantasia().trim().isEmpty()) {
+        if (dto.getNomeFantasia() != null && !dto.getNomeFantasia().isBlank()) {
             loja.setNomeFantasia(dto.getNomeFantasia());
+        } else if (lojaEhNova) {
+            loja.setNomeFantasia("Minha Loja");
         }
 
-        if (dto.getCnpj() != null && !dto.getCnpj().trim().isEmpty()) {
-            loja.setCnpj(dto.getCnpj().replaceAll("[^0-9]", ""));
+        String cnpjLimpo = dto.getCnpj() != null ? dto.getCnpj().replaceAll("[^0-9]", "") : "";
+        if (!cnpjLimpo.isBlank()) {
+            loja.setCnpj(cnpjLimpo);
+        } else if (lojaEhNova) {
+            loja.setCnpj("00000000000000");
         }
 
-        if (dto.getTelefone() != null && !dto.getTelefone().trim().isEmpty()) {
+        if (dto.getTelefone() != null && !dto.getTelefone().isBlank()) {
             loja.setTelefone(dto.getTelefone());
+        } else if (lojaEhNova) {
+            loja.setTelefone("00000000000");
         }
 
-        if (dto.getEndereco() != null && !dto.getEndereco().trim().isEmpty()) {
+        if (dto.getEndereco() != null && !dto.getEndereco().isBlank()) {
             loja.setEndereco(dto.getEndereco());
+        } else if (lojaEhNova) {
+            loja.setEndereco("A preencher");
         }
 
         loja.setDescricao(dto.getDescricao());
 
-        if (dto.getFotoUrl() != null) {
+        if (imagem != null && !imagem.isEmpty()) {
+            try {
+                String extensao = imagem.getOriginalFilename().substring(imagem.getOriginalFilename().lastIndexOf("."));
+                String nomeArquivoFinal = idConfeiteiro + "_perfil_loja" + extensao;
+
+                Path diretorioDestino = Paths.get(RAIZ_ARMAZENAMENTO + "lojas/");
+                if (!Files.exists(diretorioDestino)) {
+                    Files.createDirectories(diretorioDestino);
+                }
+
+                Path caminhoCompletoArquivo = diretorioDestino.resolve(nomeArquivoFinal);
+                System.out.println("[SERVICE] Escrevendo arquivo em: " + caminhoCompletoArquivo.toString());
+
+                Files.copy(imagem.getInputStream(), caminhoCompletoArquivo, StandardCopyOption.REPLACE_EXISTING);
+
+                String urlRelativaParaBanco = "/uploads/lojas/" + nomeArquivoFinal;
+                loja.setFotoUrl(urlRelativaParaBanco);
+
+            } catch (Exception e) {
+                System.err.println("[ERRO CRÍTICO] Falha de I/O ao gravar imagem no disco: " + e.getMessage());
+                e.printStackTrace();
+                throw new RuntimeException("Não foi possível salvar a imagem da loja. Tente novamente.");
+            }
+        } else if (dto.getFotoUrl() != null) {
             loja.setFotoUrl(dto.getFotoUrl());
         }
 
         loja.setStatus("ATIVO");
+        confeiteiro.setLoja(loja);
 
-        // Se você inverteu a relação e tirou a coluna confeiteiro_id da loja:
-        Loja lojaSalva = lojaRepository.save(loja);
-        confeiteiro.setLoja(lojaSalva); // O Confeiteiro recebe a loja salva e atualiza seu loja_id
         return repository.save(confeiteiro);
     }
 
     @Transactional(readOnly = true)
-    public Object obterPerfilPorEmail(String email) {
-        entityManager.clear(); // Garante dados novos na busca por email
-        Usuario usuario = usuarioRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Usuário não encontrado"));
+    public ConfeiteiroDTO obterPerfilPorEmail(String email) {
+        Confeiteiro confeiteiroBase = repository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Perfil de confeiteiro não encontrado para o e-mail: " + email));
 
-        if (usuario instanceof Confeiteiro) {
-            Confeiteiro confeiteiro = repository.buscarComLojaPorId(usuario.getId())
-                    .orElse((Confeiteiro) usuario);
+        Confeiteiro confeiteiroComLoja = repository.buscarComLojaPorId(confeiteiroBase.getId())
+                .orElseThrow(() -> new RuntimeException("Erro ao carregar dados da loja do confeiteiro."));
 
-            if (confeiteiro.getLoja() == null) {
-                Loja lojaProvisoria = new Loja();
-                lojaProvisoria.setNomeFantasia("Preencha o nome da sua Confeitaria");
-                lojaProvisoria.setDescricao("Clique em editar para adicionar uma descrição.");
-                lojaProvisoria.setStatus("PENDENTE");
-                confeiteiro.setLoja(lojaProvisoria);
-            }
-            return confeiteiro;
-        }
-        return usuario;
+        return converterParaDTO(confeiteiroComLoja);
     }
 
     @Transactional
@@ -161,7 +189,15 @@ public class ConfeiteiroService {
         lojaRepository.save(loja);
     }
 
-    // 🟢 CORRIGIDO: Alterado de Usuario para Confeiteiro para o Java achar o .getLoja() e injetado a busca de produtos com o método correto do repositório
+    // ADICIONADO: Método completo que lista todas as lojas já mapeadas com o DTO correto
+    @Transactional(readOnly = true)
+    public List<ConfeiteiroDTO> listarTodasAsLojas() {
+        List<Confeiteiro> confeiteiros = repository.findAll();
+        return confeiteiros.stream()
+                .map(this::converterParaDTO)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
     public ConfeiteiroDTO converterParaDTO(Confeiteiro confeiteiroEntity) {
         ConfeiteiroDTO dto = new ConfeiteiroDTO();
         dto.setId(confeiteiroEntity.getId());
@@ -178,7 +214,6 @@ public class ConfeiteiroService {
         dto.setCidade(confeiteiroEntity.getCidade());
         dto.setUf(confeiteiroEntity.getUf());
 
-        // Agora o método getLoja() compila perfeitamente porque a tipagem é Confeiteiro
         if (confeiteiroEntity.getLoja() != null) {
             LojaDTO lojaDTO = new LojaDTO();
             lojaDTO.setId(confeiteiroEntity.getLoja().getId());
@@ -189,8 +224,6 @@ public class ConfeiteiroService {
             lojaDTO.setEndereco(confeiteiroEntity.getLoja().getEndereco());
             lojaDTO.setFotoUrl(confeiteiroEntity.getLoja().getFotoUrl());
 
-            // 🟢 AJUSTADO: Usando o método real do seu repositório (findByConfeiteiroId)
-            // Passamos o ID do Confeiteiro (confeiteiroEntity.getId()) que está vinculado à loja
             List<Produto> listaProdutos = produtoRepository.findKitsByConfeiteiroId(confeiteiroEntity.getId());
             lojaDTO.setProdutos(listaProdutos);
 

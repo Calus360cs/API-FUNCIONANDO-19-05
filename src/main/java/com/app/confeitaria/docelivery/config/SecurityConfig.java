@@ -24,13 +24,11 @@ public class SecurityConfig {
     private final SecurityFilter securityFilter;
     private final CorsConfigurationSource corsConfigurationSource;
 
-    // 🟢 Voltamos a injetar o CORS que vem da sua classe CorsConfig antiga
     public SecurityConfig(SecurityFilter securityFilter, CorsConfigurationSource corsConfigurationSource) {
         this.securityFilter = securityFilter;
         this.corsConfigurationSource = corsConfigurationSource;
     }
 
-    // Garante que o filtro do CORS antigo seja injetado com prioridade máxima antes do Security barrar
     @Bean
     public FilterRegistrationBean<CorsFilter> corsFilterRegistrationBean() {
         FilterRegistrationBean<CorsFilter> bean = new FilterRegistrationBean<>(
@@ -58,20 +56,23 @@ public class SecurityConfig {
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/imagens/**").permitAll()
 
+                        // 🟢 Webhook de Pagamentos (Livre para o Mercado Pago notificar sua API)
+                        .requestMatchers(HttpMethod.POST, "/api/pagamentos/webhook").permitAll()
+
                         // 1. ROTAS PÚBLICAS (GET)
                         .requestMatchers(HttpMethod.GET, "/api/stores/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/produtos/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/combos/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/confeiteiro/public/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/confeiteiro/profile").permitAll()
 
-                        // 2. GERENCIAMENTO DE PRODUTOS (Batendo com as Roles maiúsculas da sua classe Usuario)
+                        // 2. GERENCIAMENTO DE PRODUTOS
                         .requestMatchers(HttpMethod.POST, "/api/produtos/**").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_MASTER")
                         .requestMatchers(HttpMethod.PUT, "/api/produtos/**").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_MASTER")
                         .requestMatchers(HttpMethod.DELETE, "/api/produtos/**").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_MASTER")
 
-                        // 3. PERFIL DO CONFEITEIRO, LOJA E PEDIDOS
+                        // 3. PERFIL DO CONFEITEIRO, LOJA E PEDIDOS (CORRIGIDO: Permitindo ROLE_CLIENTE acessar o profile se necessário)
+                        .requestMatchers(HttpMethod.GET, "/api/confeiteiro/profile").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_CLIENTE", "ROLE_MASTER")
                         .requestMatchers(HttpMethod.PUT, "/api/confeiteiro/loja/atualizar/**").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/confeiteiro/atualizar/**").authenticated()
                         .requestMatchers("/api/pedidos/confeiteiro/**", "/api/pedidos/confeiteiros/**").hasAnyAuthority("ROLE_CONFEITEIRO", "ROLE_MASTER")

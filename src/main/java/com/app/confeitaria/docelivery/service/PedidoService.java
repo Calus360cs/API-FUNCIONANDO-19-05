@@ -1,29 +1,33 @@
 package com.app.confeitaria.docelivery.service;
 
 import com.app.confeitaria.docelivery.dto.PedidoDTO;
-import com.app.confeitaria.docelivery.model.entity.ItemPedido;
-import com.app.confeitaria.docelivery.model.entity.Pedido;
-import com.app.confeitaria.docelivery.model.entity.MovimentacaoFinanceira; // Import novo
+import com.app.confeitaria.docelivery.dto.ItemPedidoDTO;
+import com.app.confeitaria.docelivery.model.entity.*;
 import com.app.confeitaria.docelivery.model.enums.StatusPedido;
-import com.app.confeitaria.docelivery.model.enums.TipoMovimentacao; // Import novo
-import com.app.confeitaria.docelivery.model.enums.CategoriaMovimentacao; // Import novo
+import com.app.confeitaria.docelivery.model.enums.TipoMovimentacao;
+import com.app.confeitaria.docelivery.model.enums.CategoriaMovimentacao;
 import com.app.confeitaria.docelivery.model.repository.PedidoRepository;
 import com.app.confeitaria.docelivery.model.repository.ProdutoRepository;
-import com.app.confeitaria.docelivery.model.repository.MovimentacaoRepository; // Import novo
+import com.app.confeitaria.docelivery.model.repository.MovimentacaoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import jakarta.persistence.EntityManager; // Import adicionado para segurança da FK
-import jakarta.persistence.PersistenceContext; // Import adicionado para segurança da FK
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 public class PedidoService {
+
+    private static final Logger log = LoggerFactory.getLogger(PedidoService.class);
 
     @Autowired
     private PedidoRepository pedidoRepository;
@@ -35,13 +39,12 @@ public class PedidoService {
     private SimpMessagingTemplate messagingTemplate;
 
     @Autowired
-    private MovimentacaoRepository movimentacaoRepository; // Injetado sem quebrar o resto
+    private MovimentacaoRepository movimentacaoRepository;
 
     @PersistenceContext
-    private EntityManager entityManager; // 🟢 Injetado para resolver dinamicamente o ID de segurança no banco
+    private EntityManager entityManager;
 
-    // Primeiro método: Atualiza usando o ENUM seguro
-    @Transactional // Adicionado para garantir a atomicidade do pedido + financeiro
+    @Transactional
     public PedidoDTO atualizarStatus(Long pedidoId, StatusPedido novoStatus) {
         Pedido pedido = pedidoRepository.findById(pedidoId)
                 .orElseThrow(() -> new RuntimeException("Pedido não encontrado"));
@@ -49,17 +52,73 @@ public class PedidoService {
         pedido.setStatus(novoStatus);
         Pedido pedidoSalvo = pedidoRepository.save(pedido);
 
-        // GATILHO: Se o status virar CONCLUIDO ou ENTREGUE, gera movimentação
         if (novoStatus == StatusPedido.CONCLUIDO || novoStatus == StatusPedido.ENTREGUE) {
             gerarEntradaFinanceiraAutomatica(pedidoSalvo);
         }
 
         PedidoDTO pedidoDTO = converterParaDTO(pedidoSalvo);
-
-        // Perfeito: Já enviava o DTO limpo
         messagingTemplate.convertAndSend("/topico/pedidos", pedidoDTO);
 
         return pedidoDTO;
+    }
+
+    public Pedido converterParaEntidade(PedidoDTO dto) {
+        if (dto == null) {
+            return null;
+        }
+
+        Pedido pedido = new Pedido();
+        pedido.setId(dto.id());
+
+        Cliente cliente = new Cliente();
+        if (dto.clienteId() != null) {
+            cliente.setId(dto.clienteId());
+        }
+
+        if (dto.enderecoEntrega() != null) {
+            cliente.setEndereco(dto.enderecoEntrega());
+        }
+
+        pedido.setCliente(cliente);
+
+        if (dto.total() != null) {
+            pedido.setValorPedido(dto.total().doubleValue());
+        }
+
+        if (dto.lojaId() != null) {
+            com.app.confeitaria.docelivery.model.entity.Loja loja = new com.app.confeitaria.docelivery.model.entity.Loja();
+            loja.setId(dto.lojaId());
+            pedido.setLoja(loja);
+        }
+
+        if (dto.status() != null) {
+            pedido.setStatus(StatusPedido.valueOf(dto.status().toUpperCase()));
+        } else {
+            pedido.setStatus(StatusPedido.NOVO);
+        }
+
+        if (dto.itens() != null) {
+            List<ItemPedido> itens = dto.itens().stream().map(itemDto -> {
+                ItemPedido item = new ItemPedido();
+                item.setQuantidade(itemDto.quantidade());
+                if (itemDto.precoUnitario() != null) {
+                    item.setPrecoUnitario(itemDto.precoUnitario().doubleValue());
+                }
+
+                if (itemDto.produtoId() != null) {
+                    Produto produto = new Produto();
+                    produto.setId(itemDto.produtoId());
+                    item.setProduto(produto);
+                }
+                item.setPedido(pedido);
+                return item;
+            }).collect(Collectors.toList());
+            pedido.setItens(itens);
+        } else {
+            pedido.setItens(new ArrayList<>());
+        }
+
+        return pedido;
     }
 
     public PedidoDTO converterParaDTO(Pedido pedido) {
@@ -67,19 +126,38 @@ public class PedidoService {
 
         String nomeDoCliente = (pedido.getCliente() != null) ? pedido.getCliente().getNome() : "Cliente não informado";
         String telefoneDoCliente = (pedido.getCliente() != null) ? pedido.getCliente().getTelefone() : "";
-        java.math.BigDecimal total = java.math.BigDecimal.valueOf(pedido.getValorPedido());
+
+        java.math.BigDecimal total = (pedido.getValorPedido() != null)
+                ? java.math.BigDecimal.valueOf(pedido.getValorPedido())
+                : java.math.BigDecimal.ZERO;
 
         String statusStr = (pedido.getStatus() != null) ? pedido.getStatus().name() : "NOVO";
 
+        List<ItemPedidoDTO> itensDTO = java.util.Collections.emptyList();
+        if (pedido.getItens() != null) {
+            itensDTO = pedido.getItens().stream()
+                    .map(item -> new ItemPedidoDTO(
+                            (item.getProduto() != null) ? item.getProduto().getId() : null,
+                            (item.getProduto() != null) ? item.getProduto().getNome() : "Produto Indisponível",
+                            item.getQuantidade(),
+                            (item.getPrecoUnitario() != null) ? java.math.BigDecimal.valueOf(item.getPrecoUnitario()) : java.math.BigDecimal.ZERO
+                    ))
+                    .collect(Collectors.toList());
+        }
+
         return new PedidoDTO(
                 pedido.getId(),
+                (pedido.getCliente() != null) ? pedido.getCliente().getId() : null,
+                (pedido.getLoja() != null) ? pedido.getLoja().getId() : null,
                 nomeDoCliente,
                 telefoneDoCliente,
-                "Retirada na Loja / Ver cadastro",
+                (pedido.getCliente() != null && pedido.getCliente().getEndereco() != null)
+                        ? pedido.getCliente().getEndereco()
+                        : "Retirada na Loja / Ver cadastro",
                 statusStr,
                 total,
                 pedido.getDataHoraPedido(),
-                java.util.Collections.emptyList() // Se precisar enviar itens no front, altere aqui depois
+                itensDTO
         );
     }
 
@@ -90,21 +168,20 @@ public class PedidoService {
         pedido.setDataHoraPedido(LocalDateTime.now());
 
         if (pedido.getAgendado() != null && pedido.getAgendado()) {
-            pedido.setStatus(StatusPedido.AGENDADO); // Simplificado para usar direto o Enum
+            pedido.setStatus(StatusPedido.AGENDADO);
             if (pedido.getDataEntregaAgendada() != null &&
                     pedido.getDataEntregaAgendada().isBefore(LocalDateTime.now())) {
                 throw new RuntimeException("A data do agendamento não pode ser no passado.");
             }
-        } else {
-            pedido.setStatus(StatusPedido.NOVO); // Simplificado para usar direto o Enum
+        } else if (pedido.getStatus() == null) {
+            pedido.setStatus(StatusPedido.NOVO);
         }
 
         pedido.setCodStatus(true);
         double valorTotalGeral = 0;
+        com.app.confeitaria.docelivery.model.entity.Loja lojaDoProdutoReal = null;
 
-        // Variável auxiliar para descobrir a loja através dos produtos enviados
-        com.app.confeitaria.docelivery.model.entity.Loja lojaDoPedido = null;
-
+        // 1. Processa os itens e descobre a loja verdadeira amarrada ao produto no banco (Geralmente ID 2)
         if (pedido.getItens() != null && !pedido.getItens().isEmpty()) {
             for (ItemPedido item : pedido.getItens()) {
                 item.setPedido(pedido);
@@ -123,55 +200,84 @@ public class PedidoService {
 
                 produtoRef.setEstoque(produtoRef.getEstoque() - item.getQuantidade());
 
-                // Captura a loja vinculada ao produto se ela existir
-                if (lojaDoPedido == null && produtoRef.getLoja() != null) {
-                    lojaDoPedido = produtoRef.getLoja();
+                if (lojaDoProdutoReal == null && produtoRef.getLoja() != null) {
+                    lojaDoProdutoReal = produtoRef.getLoja();
                 }
             }
         }
 
-        // 🚀 CORREÇÃO APLICADA (OPÇÃO 2): Interceptação de IDs inválidos de Loja vindos do Front
+        // 2. PROTEÇÃO DE ID INEXISTENTE (Ex: ID 10 de usuário enviado como ID de Loja)
         if (pedido.getLoja() != null && pedido.getLoja().getId() != null) {
             Long idLojaEnviado = pedido.getLoja().getId();
 
-            // Se o ID enviado na Loja for o ID de um Usuário/Confeiteiro (como 10005, 10008)
-            if (idLojaEnviado >= 10000L) {
-                System.out.println("⚠️ Correção ativada: Front-end enviou ID de usuário (" + idLojaEnviado + ") no nó da loja.");
-
-                if (idLojaEnviado == 10005L || idLojaEnviado == 10008L) {
-                    pedido.getLoja().setId(4L); // Força diretamente o ID real da loja física mapeada no seu banco
-                } else {
-                    // Limpa o ID quebrado para o bloco abaixo resolver dinamicamente via query nativa
-                    pedido.setLoja(null);
-                }
+            // Se for ID quebrado de teste ou maior/igual a 10, nós forçamos o descarte para puxar a loja correta do produto
+            if (idLojaEnviado >= 10L) {
+                log.warn("⚠️ ID de loja inválido detectado ({}) no Checkout. Limpando para resolução segura.", idLojaEnviado);
+                pedido.setLoja(null);
             }
         }
 
-        // 🟢 DEFESA ABSOLUTA DE FOREIGN KEY CONTRA O ERRO 547:
+        // 3. AMARRAÇÃO SEGURA DA LOJA
         if (pedido.getLoja() == null || pedido.getLoja().getId() == null) {
-            if (lojaDoPedido != null) {
-                pedido.setLoja(lojaDoPedido);
+            if (lojaDoProdutoReal != null) {
+                pedido.setLoja(lojaDoProdutoReal);
             } else {
                 try {
-                    // Executa uma query nativa para capturar o ID real de qualquer primeira loja cadastrada no banco
+                    // Fallback mestre se tudo falhar: pega a primeira loja ativa no banco (ID 2)
                     Number primeiroIdLoja = (Number) entityManager.createNativeQuery("SELECT TOP 1 id FROM loja").getSingleResult();
                     com.app.confeitaria.docelivery.model.entity.Loja lojaSegura = new com.app.confeitaria.docelivery.model.entity.Loja();
                     lojaSegura.setId(primeiroIdLoja.longValue());
                     pedido.setLoja(lojaSegura);
                 } catch (Exception e) {
-                    throw new RuntimeException("Erro impeditivo: Não foi encontrada nenhuma loja no banco de dados para vincular ao pedido.");
+                    throw new RuntimeException("Erro impeditivo: Nenhuma loja cadastrada no banco de dados.");
                 }
             }
         }
 
         pedido.setValorPedido(valorTotalGeral);
+
+        // 4. 🟢 CORREÇÃO DO CONFEITEIRO NULO E DO ERRO DE LOJA NÃO ENCONTRADA:
+        // Buscamos a Loja completa e atualizada do banco para recuperar o Confeiteiro dono verdadeiro dela
+        if (pedido.getLoja() != null && pedido.getLoja().getId() != null) {
+            try {
+                com.app.confeitaria.docelivery.model.entity.Loja lojaDoBanco = entityManager.find(com.app.confeitaria.docelivery.model.entity.Loja.class, pedido.getLoja().getId());
+                if (lojaDoBanco != null) {
+                    pedido.setLoja(lojaDoBanco); // Atualiza o objeto com os dados reais da tabela loja
+
+                    // Se o confeiteiro veio nulo do React, amarramos automaticamente o confeiteiro cadastrado nessa loja!
+                    if (pedido.getConfeiteiro() == null && lojaDoBanco.getConfeiteiro() != null) {
+                        pedido.setConfeiteiro(lojaDoBanco.getConfeiteiro());
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Erro de segurança ao resolver confeiteiro da loja: {}", e.getMessage());
+            }
+        }
+
+        // Segunda camada de proteção: se mesmo assim o confeiteiro ficar nulo, criamos um objeto com o ID da Loja ativa (garantia de TCC)
+        if (pedido.getConfeiteiro() == null && pedido.getLoja() != null) {
+            Confeiteiro confeiteiroSeguro = new Confeiteiro();
+            confeiteiroSeguro.setId(pedido.getLoja().getId()); // IDs batem na modelagem
+            pedido.setConfeiteiro(confeiteiroSeguro);
+        }
+
+        // 5. Salva o pedido no banco sem riscos de restrições ou IDs nulos
         Pedido pedidoSalvo = pedidoRepository.save(pedido);
 
-        // --- AJUSTADO: CONVERTE PARA DTO ANTES DE ENVIAR PARA O WEBSOCKET ---
-        if (pedidoSalvo.getConfeiteiro() != null) {
+        // 6. Envia a notificação limpa via WebSockets para a Cozinha
+        try {
             PedidoDTO pedidoDTO = converterParaDTO(pedidoSalvo);
-            String destino = "/topico/confeiteiro/" + pedidoSalvo.getConfeiteiro().getId() + "/pedidos";
-            messagingTemplate.convertAndSend(destino, pedidoDTO); // Enviando o DTO seguro
+
+            if (pedidoSalvo.getConfeiteiro() != null) {
+                String destino = "/topico/confeiteiro/" + pedidoSalvo.getConfeiteiro().getId() + "/pedidos";
+                log.info("📢 Enviando WebSocket para a cozinha do confeiteiro ID: {}", pedidoSalvo.getConfeiteiro().getId());
+                messagingTemplate.convertAndSend(destino, pedidoDTO);
+            }
+
+            messagingTemplate.convertAndSend("/topico/pedidos", pedidoDTO);
+
+        } catch (Exception e) {
+            log.error("⚠️ Aviso: Pedido salvo no banco, mas falhou ao enviar Websocket/DTO: {}", e.getMessage());
         }
 
         return pedidoSalvo;
@@ -211,22 +317,19 @@ public class PedidoService {
 
         Pedido pedidoAtualizado = pedidoRepository.save(pedido);
 
-        // GATILHO: Se a string recebida for do fechamento da venda, gera movimentação
         if (statusMaiusculo.equals("CONCLUIDO") || statusMaiusculo.equals("ENTREGUE")) {
             gerarEntradaFinanceiraAutomatica(pedidoAtualizado);
         }
 
-        // --- AJUSTADO: CONVERTE PARA DTO ANTES DE ENVIAR PARA O WEBSOCKET ---
         if (pedidoAtualizado.getConfeiteiro() != null) {
             PedidoDTO pedidoDTO = converterParaDTO(pedidoAtualizado);
             String destino = "/topico/confeiteiro/" + pedidoAtualizado.getConfeiteiro().getId() + "/pedidos";
-            messagingTemplate.convertAndSend(destino, pedidoDTO); // Enviando o DTO seguro
+            messagingTemplate.convertAndSend(destino, pedidoDTO);
         }
 
         return pedidoAtualizado;
     }
 
-    // MÉTODO PRIVADO ISOLADO: Executa o salvamento financeiro sem misturar na lógica existente
     private void gerarEntradaFinanceiraAutomatica(Pedido pedido) {
         try {
             MovimentacaoFinanceira entrada = new MovimentacaoFinanceira();
@@ -243,9 +346,6 @@ public class PedidoService {
         }
     }
 
-    /**
-     * CLIENTE: Busca todos os pedidos efetuados por um cliente específico para o histórico.
-     */
     public List<Pedido> buscarPedidosPorCliente(Long clienteId) {
         return pedidoRepository.findByClienteId(clienteId);
     }

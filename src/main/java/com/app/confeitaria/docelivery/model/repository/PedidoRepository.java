@@ -3,6 +3,7 @@ package com.app.confeitaria.docelivery.model.repository;
 import com.app.confeitaria.docelivery.model.entity.Pedido;
 import com.app.confeitaria.docelivery.model.enums.StatusPedido;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -34,4 +35,10 @@ public interface PedidoRepository extends JpaRepository<Pedido, Long> {
 
     // Essa linha precisa estar aqui para o Service funcionar!
     List<Pedido> findByClienteId(Long clienteId);
+
+    @Query("SELECT p FROM Pedido p WHERE p.loja.id = :idLoja AND p.status = 'PAGO'")
+    List<Pedido> buscarFilaDeTrabalho(Long idLoja);
+
+    // Adicione esta assinatura de método dentro do seu PedidoRepository.java
+    java.util.Optional<Pedido> findByMercadoPagoTransactionId(String mercadoPagoTransactionId);
 }

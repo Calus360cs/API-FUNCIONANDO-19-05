@@ -17,7 +17,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/financeiro")
-@CrossOrigin(origins = "*") // Ajuste de acordo com a sua configuração global de CORS
 public class MovimentacaoController {
 
     @Autowired

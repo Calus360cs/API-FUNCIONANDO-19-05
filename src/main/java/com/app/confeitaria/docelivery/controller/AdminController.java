@@ -13,7 +13,6 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/api/admin")
-@CrossOrigin("*")
 public class AdminController {
 
     @Autowired private AdminRepository adminRepository;

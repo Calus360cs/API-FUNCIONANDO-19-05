@@ -12,7 +12,6 @@ import java.util.List;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-
 public class Pedido {
 
     @Id
@@ -22,27 +21,29 @@ public class Pedido {
     @Column(nullable = false, length = 10, unique = true)
     private String numeroPedido;
 
-    // 🟢 CORRIGIDO: Mudou de 'double' para 'Double' (Aceita null e evita erro 500)
     private Double valorPedido;
 
     private LocalDateTime dataHoraPedido;
 
-    // 🟢 CORRIGIDO: Mudou de 'boolean' para 'Boolean' (Mais seguro para desserialização de JSON)
+    private String mercadoPagoTransactionId;
+
     private Boolean codStatus;
+
     private Boolean agendado;
 
     private LocalDateTime dataEntregaAgendada;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status")
+    @Column(name = "status", nullable = false, columnDefinition = "VARCHAR(50)")
     private StatusPedido status;
 
-    @OneToMany(mappedBy = "pedido", cascade = CascadeType.ALL, orphanRemoval = true)
+    // 🟢 CORRIGIDO: Mudado para FetchType.EAGER para carregar os doces do carrinho junto com o pedido
+    @OneToMany(mappedBy = "pedido", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<ItemPedido> itens;
 
     @ManyToOne
     @JoinColumn(name = "loja_id")
-    private Loja loja; // Este nome 'loja' deve ser usado no Repository
+    private Loja loja;
 
     @ManyToOne
     @JoinColumn(name = "cliente_id")

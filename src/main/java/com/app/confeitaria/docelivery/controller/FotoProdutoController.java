@@ -12,7 +12,6 @@ import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/fotos")
-@CrossOrigin("*") // Permite que seu React acesse o backend sem erro de CORS
 public class FotoProdutoController {
 
     @Autowired

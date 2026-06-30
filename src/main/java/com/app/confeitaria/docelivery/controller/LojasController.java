@@ -1,9 +1,9 @@
 package com.app.confeitaria.docelivery.controller;
 
-import com.app.confeitaria.docelivery.model.entity.Confeiteiro;
-import com.app.confeitaria.docelivery.model.entity.Produto; // Entidade corrigida
-import com.app.confeitaria.docelivery.model.repository.ConfeiteiroRepository;
-import com.app.confeitaria.docelivery.model.repository.ProdutoRepository; // Repositório corrigido
+import com.app.confeitaria.docelivery.dto.ConfeiteiroDTO;
+import com.app.confeitaria.docelivery.model.entity.Produto;
+import com.app.confeitaria.docelivery.model.repository.ProdutoRepository;
+import com.app.confeitaria.docelivery.service.ConfeiteiroService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -12,34 +12,35 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/stores")
-@CrossOrigin("*")
 public class LojasController {
 
     @Autowired
-    private ConfeiteiroRepository confeiteiroRepository;
+    private ConfeiteiroService confeiteiroService; // Injeção do Service adicionada
 
     @Autowired
-    private ProdutoRepository produtoRepository; // Nome da variável corrigido
+    private ProdutoRepository produtoRepository;
 
-    // GET /api/stores - Retorna todas as lojas (confeiteiros)
+    // GET /api/stores - Retorna todas as lojas convertidas em DTO (Padroniza as imagens)
     @GetMapping
-    public ResponseEntity<List<Confeiteiro>> listarLojas() {
-        List<Confeiteiro> lojas = confeiteiroRepository.findAll();
+    public ResponseEntity<List<ConfeiteiroDTO>> listarLojas() {
+        List<ConfeiteiroDTO> lojas = confeiteiroService.listarTodasAsLojas();
         return ResponseEntity.ok(lojas);
     }
 
-    // GET /api/stores/{id} - Retorna uma loja específica
+    // GET /api/stores/{id} - Retorna uma loja específica em DTO
     @GetMapping("/{id}")
-    public ResponseEntity<Confeiteiro> buscarLojaPorId(@PathVariable Long id) {
-        return confeiteiroRepository.findById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<ConfeiteiroDTO> buscarLojaPorId(@PathVariable Long id) {
+        try {
+            ConfeiteiroDTO dto = confeiteiroService.buscarConfeiteiroPorId(id);
+            return ResponseEntity.ok(dto);
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
-    // RESOLVE O ERRO 500: Adiciona o endpoint de menu com a nomenclatura em português
+    // GET /api/stores/{id}/menu - Retorna o cardápio da loja
     @GetMapping("/{id}/menu")
     public ResponseEntity<List<Produto>> buscarMenuDaLoja(@PathVariable Long id) {
-        // Busca os produtos vinculados ao ID do confeiteiro
         List<Produto> menu = produtoRepository.findKitsByConfeiteiroId(id);
         return ResponseEntity.ok(menu);
     }

@@ -42,7 +42,8 @@ public class Produto {
     private Boolean codStatus = true;
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "categoria_id")
+    @JoinColumn(name = "categoria_id", nullable = false, updatable = false)
+    @org.hibernate.annotations.NotFound(action = org.hibernate.annotations.NotFoundAction.IGNORE) // 🟢 Evita o erro se a categoria sumir
     private Categoria categoria;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -72,7 +73,10 @@ public class Produto {
 
     public void setCategoriaId(Long id) {
         if (id != null) {
-            this.categoria = new Categoria();
+            // Só cria uma nova instância se a categoria atual já for nula
+            if (this.categoria == null) {
+                this.categoria = new Categoria();
+            }
             this.categoria.setId(id);
         }
     }

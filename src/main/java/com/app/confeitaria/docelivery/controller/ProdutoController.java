@@ -7,9 +7,7 @@ import com.app.confeitaria.docelivery.model.repository.ProdutoRepository;
 import com.app.confeitaria.docelivery.model.repository.UsuarioRepository;
 import com.app.confeitaria.docelivery.model.repository.CategoriaRepository;
 import com.app.confeitaria.docelivery.service.ProdutoService;
-import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -47,13 +45,12 @@ public class ProdutoController {
                     .orElseThrow(() -> new RuntimeException("Confeiteiro não encontrado"));
 
             Produto produto = new Produto();
-            // 🟢 SINTAXE CORRETA PARA RECORD: nome(), descricao(), preco(), estoque()
             produto.setNome(dto.nome());
             produto.setDescricao(dto.descricao());
             produto.setPreco(dto.preco());
             produto.setEstoque(dto.estoque());
             produto.setConfeiteiro(confeiteiro);
-            produto.setCodStatus(true); // Nasce ativo por padrão
+            produto.setCodStatus(true);
 
             if (dto.categoriaId() != null) {
                 Categoria categoria = categoriaRepository.findById(dto.categoriaId())
@@ -67,7 +64,6 @@ public class ProdutoController {
 
             return ResponseEntity.status(HttpStatus.CREATED).body(produtoRepository.save(produto));
         } catch (Exception e) {
-            e.printStackTrace();
             return ResponseEntity.badRequest().body("Erro ao salvar produto: " + e.getMessage());
         }
     }
@@ -84,25 +80,25 @@ public class ProdutoController {
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Erro ao atualizar: " + e.getMessage()));
         }
     }
 
-    // 3. BUSCAR POR LOJA / CONFEITEIRO (Mude para chamar o método de produtos comuns)
+    // 3. BUSCAR POR LOJA / CONFEITEIRO
     @GetMapping("/store/{id}")
     public ResponseEntity<?> getByStore(@PathVariable Long id) {
         List<Produto> produtos = produtoRepository.findProdutosComunsByConfeiteiroId(id);
         return ResponseEntity.ok(produtos);
     }
 
-    // 4. DESATIVAR PRODUTO
+    // 4. DESATIVAR / REATIVAR PRODUTO (CORRIGIDO PARA NÃO TRAVAR O BANCO)
     @PutMapping("/{id}/desativar")
+    @Transactional
     public ResponseEntity<?> desativar(@PathVariable Long id) {
         try {
             produtoService.desativarProduto(id);
-            return ResponseEntity.noContent().build();
+            return ResponseEntity.ok(Map.of("message", "Status atualizado com sucesso!"));
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         }
@@ -121,7 +117,7 @@ public class ProdutoController {
         }
     }
 
-    // 5.1 EXCLUIR PRODUTO KIT (Rota nova que o front-end chama)
+    // 5.1 EXCLUIR PRODUTO KIT
     @DeleteMapping("/kit/{id}")
     public ResponseEntity<?> deleteKit(@PathVariable Long id) {
         try {
@@ -134,7 +130,7 @@ public class ProdutoController {
         }
     }
 
-    // 6. LISTAR KITS DO CONFEITEIRO (Mude para chamar o método de kits)
+    // 6. LISTAR KITS DO CONFEITEIRO
     @GetMapping("/kit/confeiteiro/{id}")
     public ResponseEntity<?> getKitsByConfeiteiro(@PathVariable Long id) {
         try {
@@ -161,11 +157,7 @@ public class ProdutoController {
             }
 
             return ResponseEntity.status(HttpStatus.CREATED).body(kit);
-
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Erro interno ao processar o kit: " + e.getMessage()));
         }
